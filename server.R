@@ -320,7 +320,7 @@ shinyServer(function(input, output,session) {
           jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlGroupMAF)
           setwd(paste0("users/",sessionvalues$logged_user))
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
-          startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true ../../GVR.py &')
+          startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true ../../spark/GVR.py &')
           system(startCommand)
           setwd("../..")
         })
@@ -533,12 +533,80 @@ shinyServer(function(input, output,session) {
     )
   })
   
+  #Download score list as CSV
+  output$downloadScoreTable <- downloadHandler(
+    filename = function() {
+      paste0(input$selectAnalysis,'.zip')
+    },
+    content = function(con) {
+      filename=paste0(input$selectAnalysis,'.csv')
+      write.csv(sessionvalues$results$scoreSummaryRaw, file=filename, row.names=F,quote=F)
+      zip(con,c(filename))
+    }
+  )
+  
+  observe({
+    input$shareHighlanderConfirm
+    isolate({
+      if ((length(input$shareHighlanderPatientSelect)>0) & length(input$shareHighlanderGeneSelect)>0) {
+        patients<-input$shareHighlanderPatientSelect
+        genes<-input$shareHighlanderGeneSelect
+        username<-input$shareHighlanderUserSelect
+        
+        result<-paste0("CUSTOM$&[patient!EQUAL!",paste0(patients,collapse="?"),"!!1!0#gene_symbol!EQUAL!",
+                        paste0(genes,collapse="?"),"!!1!0#]")
+        #browser()
+        connectFile<-"../connectHighlander.R"
+        source(connectFile)
+        dbGetQuery(highlanderdb,paste0("INSERT INTO users_data (`username`,`type`,`analysis`,`key`,`value`) VALUES ('yleborgn', 'FILTER','exomes_hc','SHARE|",username,"|DiGeST','",result,"');"))
+        dbDisconnect(highlanderdb)
+        
+        toggleModal(session, "shareHighlanderModal", toggle = "close")
+      }
+    })
+  })
+  
+  
+  output$shareHighlanderUI<-renderUI({
+    connectFile<-"../connectHighlander.R"
+    source(connectFile)
+    users<-sort(dbGetQuery(highlanderdb,paste0("select * from users"))$username[-1])
+    dbDisconnect(highlanderdb)
+    genes<-sessionvalues$results$scoreSummaryRaw[,'Gene_Symbol1']
+    patients<-c(sessionvalues$results$caseSampleID,sessionvalues$results$controlSampleID)
+    fluidRow(
+      column(12,
+      selectInput('shareHighlanderUserSelect', 'Share with user', 
+                  choices = users, 
+                  selected=users[1],
+                  selectize = FALSE),
+      selectInput('shareHighlanderPatientSelect', 'Sample list', 
+                  choices = patients, 
+                  selected=patients,
+                  selectize = TRUE,multiple=TRUE,width='900px'),
+      selectInput('shareHighlanderGeneSelect', 'Gene list', 
+                  choices = genes, 
+                  selected=genes[1],
+                  selectize = TRUE,multiple=TRUE,width='900px')
+      )
+    )
+  })
+  
   output$resultsPanel<-renderUI({
     fluidRow(
       column(12,
              uiOutput("resultsMetadata"),
              hr(),
-             h3("Ranking results"),
+             h3("Scoring results"),
+             div(
+               downloadButton('downloadScoreTable', label = "Download score table (CSV)",class = NULL),
+               actionButton("shareHighlanderButton", label = "Share in Highlander"),
+               align="right"),
+             bsModal("shareHighlanderModal", "Share in Highlander", "shareHighlanderButton", 
+                     size = "large",
+                     uiOutput("shareHighlanderUI"),
+                     actionButton("shareHighlanderConfirm", label = "Share")
+             ),
              uiOutput("showVarResultsUI"),
              DT::dataTableOutput('resultsTable'),
              hr(),

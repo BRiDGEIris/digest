@@ -1,8 +1,8 @@
 SPARK_HOME<-"/Users/yalb/spark"
 #SPARK_HOME<-"/home/docker/spark"
 
-#Sys.setenv(SPARK_HOME=SPARK_HOME)
-#Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
+Sys.setenv(SPARK_HOME=SPARK_HOME)
+Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
 #.libPaths(c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib"), .libPaths()))
 #library(SparkR)
 
@@ -88,6 +88,7 @@ loadPhenotypes<-function(sql) {
 #Highlander
 #####################
 
+
 #Only keep a subset of Highlander fields
 fieldsToKeep<-c("patient","chr","pos","reference","alternative","zygosity","read_depth","genotype_quality","filters",
                 "gene_symbol", "gene_ensembl", 
@@ -98,97 +99,6 @@ fieldsToKeep<-c("patient","chr","pos","reference","alternative","zygosity","read
                 "cadd_phred","cadd_raw","vest_score","pph2_hdiv_score", "pph2_hdiv_pred", 
                 "pph2_hvar_score", "pph2_hvar_pred", "sift_score", "sift_pred", "short_tandem_repeat","variant_confidence_by_depth")
 fields_select<-paste(unique(c(fieldsToKeep)),collapse=",")
-
-updateVariantFilter<-function() {
-  
-  condb <- dbConnect(drv,IMPALA_SERVER )
-  rs<-dbSendQuery(condb,paste0("select ",fields_select," from ",VARIANTS_TABLE," limit 1"))
-  column_info<-dbColumnInfo(rs)
-  column_info[,2]<-as.character(column_info[,2])
-  column_info[,1]<-as.character(column_info[,1])
-  for (i in 1:nrow(column_info)) {
-    if (column_info[i,2]=="string") {
-      print(i)
-      nbFields<-dbGetQuery(condb,paste0("select count(distinct ",column_info[i,1],") from ",VARIANTS_TABLE))
-      if (nbFields<30) column_info[i,2]<-"factor"
-    }
-  }
-  
-  filters<-list()
-  for (i in 1:nrow(column_info)) {
-    filterCol<-
-      switch(column_info[i,2],
-             string=list(
-               id= column_info[i,1],
-               label= column_info[i,1],
-               type= 'string',
-               default_value="",
-               operators=list('equal','not_equal','contains', 'in', 'not_in','begins_with', 'ends_with','is_null', 'is_not_null')),
-             factor={
-               values<-sort(dbGetQuery(condb,paste0("select distinct ",column_info[i,1]," from ",VARIANTS_TABLE))[,1])
-               list(
-                 id= column_info[i,1],
-                 label= column_info[i,1],
-                 type= 'string',
-                 input='select',
-                 values=values,
-                 default_value=values[1],
-                 operators=list('equal','not_equal','contains', 'in', 'not_in','is_null', 'is_not_null'))
-             },
-             tinyint=list(
-               id= column_info[i,1],
-               label= column_info[i,1],
-               type= 'integer',
-               default_value="",
-               operators=list('equal','not_equal','less', 'less_or_equal', 'greater','greater_or_equal','between','in', 'not_in','is_null', 'is_not_null')),
-             int=list(
-               id= column_info[i,1],
-               label= column_info[i,1],
-               type= 'integer',
-               default_value="",
-               operators=list('equal','not_equal','less', 'less_or_equal', 'greater','greater_or_equal','between','in', 'not_in','is_null', 'is_not_null')),
-             double=list(
-               id= column_info[i,1],
-               label= column_info[i,1],
-               type= 'double',
-               default_value="",
-               operators=list('equal','not_equal',  'less', 'less_or_equal', 'greater','greater_or_equal','between','is_null', 'is_not_null'))
-      )
-    filters<-c(filters,list(filterCol))
-  }
-  save(file="filterVariantSpec.Rdata",filters)
-}
-
-saveGeneListHighlander<-function() {
-  connectFile<-"../../connectHighlander.R"
-  source(connectFile)
-  
-  dbGetQuery(highlanderdb,paste0("show tables"))
-  data<-dbGetQuery(highlanderdb,paste0("select * from users_data where username='yleborgn' and analysis='exomes_hc'"))
-  
-  data<-dbGetQuery(highlanderdb,paste0("select * from users_data"))
-                   
-  
-  userdatadb <- dbConnect(RSQLite::SQLite(), "userdata.db")
-  dbWriteTable(userdatadb,"users_data",data,overwrite=T,row.names=F)
-  dbDisconnect(userdatadb)
-  
-  userdatadb <- dbConnect(RSQLite::SQLite(), "userdata.db")
-  data<-dbGetQuery(userdatadb,paste0("select * from users_data where username='yleborgn' and analysis='exomes_hc'"))
-  
-  dbGetQuery(userdatadb,"INSERT INTO users_data ('username', 'type','key','value') VALUES ('yleborgn', 'VALUES','SHARE|yleborgn|(digest)','CUSTOM$gene_symbol!EQUAL!A1CF?A2M-AS1?AAAS!!0!0');")
-  
-  
-  dbGetQuery(highlanderdb,"INSERT INTO users_data (`username`,`type`,`analysis`,`key`,`value`) VALUES ('yleborgn', 'FILTER','exomes_hc','SHARE|yleborgn|(digest)','CUSTOM$gene_symbol!EQUAL!A1CF?A2M-AS1?AAAS!!0!0');")
-  
-  dbGetQuery(highlanderdb,"DELETE FROM users_data WHERE id=102697;")
-  
-  data<-dbGetQuery(userdatadb,paste0("select * from users_data where username='yleborgn' and analysis='exomes_hc' and id=200000"))
-
-  max_id<-dbGetQuery(highlanderdb,paste0("select max(id) from users_data"))[1,1]
-  dbGetQuery(highlanderdb,paste0("INSERT INTO users_data ('id', 'username', 'type','analysis','key','value') VALUES ('",max_id+1,"', 'yleborgn', 'FILTER','test3','CUSTOM$gene_symbol!EQUAL!A1CF?A2M-AS1?AAAS!!0!0');"))
-
-}
 
 #########
 #LDAP
@@ -321,8 +231,10 @@ procRes<-function(results) {
   if (res$scale=="gene") {
     if (res$scope=="monogenic") {
       geneID<-res$locus
-      geneID<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID,"' target='_blank'>",geneID,"</a>")
-      res$scoreSummary<-cbind(t(res$scores),geneID)
+      geneID_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID,"' target='_blank'>",geneID,"</a>")
+      res$scoreSummaryRaw<-cbind(t(res$scores),geneID)
+      colnames(res$scoreSummaryRaw)<-c("Score","Score_Case","Score_Control","Gene_Symbol")
+      res$scoreSummary<-cbind(t(res$scores),geneID_Link)
       colnames(res$scoreSummary)<-c("Score","Score_Case","Score_Control","Gene_Symbol")
     }
     
@@ -330,10 +242,12 @@ procRes<-function(results) {
       genes<-ldply(res$scores[1,])
       res$scores<-res$scores[2:4,]
       geneID1<-genes[,1]
-      geneID1<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID1,"' target='_blank'>",geneID1,"</a>")
+      geneID1_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID1,"' target='_blank'>",geneID1,"</a>")
       geneID2<-genes[,2]
-      geneID2<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID2,"' target='_blank'>",geneID2,"</a>")
-      res$scoreSummary<-cbind(t(res$scores),geneID1,geneID2)
+      geneID2_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID2,"' target='_blank'>",geneID2,"</a>")
+      res$scoreSummaryRaw<-cbind(t(res$scores),geneID1,geneID2)
+      colnames(res$scoreSummaryRaw)<-c("Score","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
+      res$scoreSummary<-cbind(t(res$scores),geneID1_Link,geneID2_Link)
       colnames(res$scoreSummary)<-c("Score","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
     }
   }

@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[177]:
 
 from pyspark import SparkContext, SparkConf
 from pyspark.sql import SQLContext
@@ -19,9 +19,8 @@ sqlControl=content[3]
 sqlCase=content[4]
 group1name=content[5]
 group2name=content[6]
-controlMAF=content[7]
 
-nPartitions=10
+nPartitions=4
 conf = (SparkConf()
          .setMaster("local["+str(nPartitions)+"]")
          .setAppName(analysisName)
@@ -31,19 +30,31 @@ conf = (SparkConf()
        )
 #sc.stop()
 sc = SparkContext(conf=conf)
-#sqlContext = SQLContext(sc)
-sqlContext = HiveContext(sc) 
+
+
+#parquetFile = sqlContext.read.parquet("/user/hive/warehouse/gvr4.db/variantsulb")
+#parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/Docker/cdh54_4_add1000g/variants2")
+#parquetFile = sqlContext.read.parquet("hdfs://127.0.0.1:8020/user/hive/warehouse/gvr.db/test")
+#parquetFile = sqlContext.read.parquet("hdfs://localhost/user/hive/warehouse/gvr3.db/variants")
+
+
+
+# In[178]:
+
+#sqlContext = HiveContext(sc) #sqlContext._get_hive_ctx() #HiveContext(sc) 
+sqlContext = SQLContext(sc)
 sqlContext.sql("SET spark.sql.parquet.binaryAsString=true")
 
 #parquetFile = sqlContext.read.parquet("/user/hive/warehouse/gvr4.db/variantsulb")
 #parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/Docker/cdh54_4_add1000g/variants2")
-parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/variant-ranking/variantsulb2")
 #parquetFile = sqlContext.read.parquet("hdfs://127.0.0.1:8020/user/hive/warehouse/gvr.db/test")
 #parquetFile = sqlContext.read.parquet("hdfs://localhost/user/hive/warehouse/gvr3.db/variants")
+
+parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/digest/variantsulb")
 parquetFile.registerTempTable("parquetFile");
 
 
-# In[2]:
+# In[179]:
 
 #analysisName="control_vs_neurodev_rare_digenic"
 #group1name="control_ulb_rare_damaging"
@@ -53,56 +64,44 @@ parquetFile.registerTempTable("parquetFile");
 #controlMAF=0.5
 
 
-# In[3]:
+# In[180]:
 
-#RDDtest = sqlContext.sql("SELECT distinct sample_id from parquetFile")
+#RDDtest = sqlContext.sql("SELECT distinct patient from parquetFile")
 
 
-# In[4]:
+# In[181]:
 
 #RDDtest.count()
 
 
-# In[2]:
+# In[182]:
 
-def splitByVariantID(variantData):
+#Input is vector patient, chr, pos, ref, alt, gene_symbol, zygosity
+def splitByVariantID(variantData,patientsID):
+    #ID is chr:pos:ref:alt
     ID=variantData[1]+":"+str(variantData[2])+":"+variantData[3]+":"+variantData[4]
-    return (ID,(variantData[5],variantData[0],variantData[6]))
+    #return ID, gene_symbol, patient, zygosity
+    zygosity=2
+    if variantData[6]==1:
+        zygosity=1
+    patientIndex=patientsID[variantData[0]]
+    return (ID,(variantData[5],patientIndex,zygosity))
 
-def buildVariantVector(ID,variantData,samplesID):
+def buildVariantVector(ID,variantData,patientsID):
     variantData=list(variantData)
-    result=[0]*len(samplesID)
+    genotype=[0]*len(patientsID)
     
     #Get sampleID/Genotype for each variant
-    sID=[]
-    geno=[]
     for i in range(0,len(variantData)):
-        if variantData[i][2]=="Homozygous":
-            geno.append(2)
-        else:
-            geno.append(1)
-        sID.append(variantData[i][1])
+        genotype[variantData[i][1]]=variantData[i][2]
     
-    #Sort according to sampleID
-    sIDsorted=[v for v in sorted(enumerate(sID), key=lambda x:x[1])]
-    sID=[v[1] for v in sIDsorted]
-    geno=[geno[v[0]] for v in sIDsorted]                             
-    
-    curID=0
-    for i in range(0,len(samplesID)):
-        if sID[curID]==samplesID[i]:
-            result[i]=geno[curID]
-            curID=curID+1
-        if curID==len(sID):
-            break;
-    
-    return ((ID,variantData[0][0]),result)
+    return ((ID,variantData[0][0]),genotype)
 
 
 
-# In[3]:
+# In[183]:
 
-def splitValues(variantData):    
+def geneAsKey(variantData):    
     return (variantData[0][1],(variantData[0][0],variantData[1]))
 
 def makePairParts(k,v,nbPart):
@@ -116,7 +115,7 @@ def f(splitIndex ,v):
     return [(splitIndex,list(v))]
 
 
-# In[4]:
+# In[184]:
 
 def scoreVariantUnivariate(k,variantData):
     variantData=list(variantData)
@@ -135,8 +134,9 @@ def scoreVariantUnivariate(k,variantData):
         return (k,(score,sumCase,sumControl))
 
 
-# In[5]:
+# In[185]:
 
+#variantList is [(locusID,[genotypeCase,genotypeControl])]
 def scoreGeneUnivariate(k,variantList):
     variantList=list(variantList)
     
@@ -154,18 +154,13 @@ def scoreGeneUnivariate(k,variantList):
                 
         sumCase=sum([int(x>0) for x in genosumcase])
         sumControl=sum([int(x>0) for x in genosumcontrol])
-        meanControl=0
-        if len(genosumcontrol)>0:
-            meanControl=round(float(sumControl)/len(genosumcontrol),2)
-        score=sumCase
+        score=sumCase-sumControl
 
     if score>0:
-        if meanControl<=controlMAF_b.value:
-            result=[k,(score,sumCase,meanControl)]
-            return result
+        return (k,(score,sumCase,sumControl))
 
 
-# In[70]:
+# In[186]:
 
 def scoreDigenicGene(k,variantLists):
     variantLists=list(variantLists)
@@ -232,8 +227,15 @@ def fillMissing(k,v):
         
     return (k,v)
 
+def fillMissing(k,v):
+    v=list(v)
+    if v[1] is None:
+        v[1]=[0]*len(dict_patient_control_b.value)
+        
+    return (k,v)
 
-# In[71]:
+
+# In[187]:
 
 start_time = time.time()
 #sqlCase="sample_id IN('HG00096','HG00097','HG00099','HG00100','HG00101','HG00102','HG00103','HG00105','HG00106','HG00107','HG00108','HG00109','HG00110','HG00111','HG00112','HG00113','HG00114','HG00115','HG00116','HG00117','HG00118','HG00119','HG00120','HG00121','HG00122','HG00123','HG00125','HG00126','HG00127','HG00128','HG00129','HG00130','HG00131','HG00132','HG00133','HG00136','HG00137','HG00138','HG00139','HG00140','HG00141','HG00142','HG00143','HG00145','HG00146','HG00148','HG00149','HG00150','HG00151','HG00154','HG00155','HG00157','HG00158','HG00159','HG00160','HG00171','HG00173','HG00174','HG00176','HG00177','HG00178','HG00179','HG00180','HG00181','HG00182','HG00183','HG00185','HG00186','HG00187','HG00188','HG00189','HG00190','HG00231','HG00232','HG00233','HG00234','HG00235','HG00236','HG00237','HG00238','HG00239','HG00240','HG00242','HG00243','HG00244','HG00245','HG00246','HG00250','HG00251','HG00252','HG00253','HG00254','HG00255','HG00256','HG00257','HG00258','HG00259','HG00260','HG00261','HG00262')"
@@ -242,61 +244,40 @@ start_time = time.time()
 #sample_id_case=['HG00096','HG00097','HG00099','HG00100','HG00101','HG00102','HG00103','HG00105','HG00106','HG00107','HG00108','HG00109','HG00110','HG00111','HG00112','HG00113','HG00114','HG00115','HG00116','HG00117','HG00118','HG00119','HG00120','HG00121','HG00122','HG00123','HG00125','HG00126','HG00127','HG00128','HG00129','HG00130','HG00131','HG00132','HG00133','HG00136','HG00137','HG00138','HG00139','HG00140','HG00141','HG00142','HG00143','HG00145','HG00146','HG00148','HG00149','HG00150','HG00151','HG00154','HG00155','HG00157','HG00158','HG00159','HG00160','HG00171','HG00173','HG00174','HG00176','HG00177','HG00178','HG00179','HG00180','HG00181','HG00182','HG00183','HG00185','HG00186','HG00187','HG00188','HG00189','HG00190','HG00231','HG00232','HG00233','HG00234','HG00235','HG00236','HG00237','HG00238','HG00239','HG00240','HG00242','HG00243','HG00244','HG00245','HG00246','HG00250','HG00251','HG00252','HG00253','HG00254','HG00255','HG00256','HG00257','HG00258','HG00259','HG00260','HG00261','HG00262']
 #sample_id_control=['HG00096','HG00097','HG00099','HG00100','HG00101','HG00102','HG00103','HG00105','HG00106','HG00107','HG00108','HG00109','HG00110','HG00111','HG00112','HG00113','HG00114','HG00115','HG00116','HG00117','HG00118','HG00119','HG00120','HG00121','HG00122','HG00123','HG00125','HG00126','HG00127','HG00128','HG00129','HG00130','HG00131','HG00132','HG00133','HG00136','HG00137','HG00138','HG00139','HG00140','HG00141','HG00142','HG00143','HG00145','HG00146','HG00148','HG00149','HG00150','HG00151','HG00154','HG00155','HG00157','HG00158','HG00159','HG00160','HG00171','HG00173','HG00174','HG00176','HG00177','HG00178','HG00179','HG00180','HG00181','HG00182','HG00183','HG00185','HG00186','HG00187','HG00188','HG00189','HG00190','HG00231','HG00232','HG00233','HG00234','HG00235','HG00236','HG00237','HG00238','HG00239','HG00240','HG00242','HG00243','HG00244','HG00245','HG00246','HG00250','HG00251','HG00252','HG00253','HG00254','HG00255','HG00256','HG00257','HG00258','HG00259','HG00260','HG00261','HG00262']
 
-RDDcase = sqlContext.sql("SELECT sample_id,chr,position,reference,alternative,gene_symbol,zygosity FROM parquetFile "+sqlCase)
-sample_id_case=sorted(RDDcase.map(lambda v:v[0]).distinct().collect())
-sample_id_case_b = sc.broadcast(sample_id_case)
+RDDcase = sqlContext.sql("SELECT patient,chr,pos,reference,alternative,gene_symbol,zygosity FROM parquetFile "+sqlCase)
+patient_case=sorted(RDDcase.map(lambda v:v[0]).distinct().collect())
+dict_patient_case=dict(zip(patient_case,range(len(patient_case))))
+dict_patient_case_b = sc.broadcast(dict_patient_case)
 
 if sqlControl!="NULL":
-    RDDcontrol= sqlContext.sql("SELECT sample_id,chr,position,reference,alternative,gene_symbol,zygosity FROM parquetFile "+sqlControl)
-    controlMAF=float(controlMAF)
+    RDDcontrol= sqlContext.sql("SELECT patient,chr,pos,reference,alternative,gene_symbol,zygosity FROM parquetFile "+sqlControl)
+#    controlMAF=float(controlMAF)
 else:
     RDDcontrol=sc.emptyRDD()
-    controlMAF=0
-    
-sample_id_control=sorted(RDDcontrol.map(lambda v:v[0]).distinct().collect())
-sample_id_control_b = sc.broadcast(sample_id_control)
+#    controlMAF=0   
+patient_control=sorted(RDDcontrol.map(lambda v:v[0]).distinct().collect())
+dict_patient_control=dict(zip(patient_control,range(len(patient_control))))
+dict_patient_control_b = sc.broadcast(dict_patient_control)
 
 
-controlMAF_b=sc.broadcast(controlMAF)
+#controlMAF_b=sc.broadcast(controlMAF)
 
-#RDDcase = sqlContext.sql("SELECT sample_id,chr,position,reference,alternative,gene_symbol,zygosity FROM parquetFile where sample_id IN('HG01855' , 'ZH136914' , 'ZH141272' , 'ZH141483' , 'ZH108301' , 'ZH135914' , 'ZH136155' , 'ZH136587' , 'ZH137071' , 'ZH141455' , 'ZH135614')")
-#RDDcontrol= sqlContext.sql("SELECT sample_id,chr,position,reference,alternative,gene_symbol,zygosity FROM parquetFile where sample_id IN('NA18871' , 'ZH136915' , 'ZH141389' , 'ZH141390' , 'ZH142274' , 'ZH142276' , 'ZH1428' , 'ZH1429' , 'ZH135907' , 'ZH135909' , 'ZH136156' , 'ZH136157' , 'ZH136586' , 'ZH137070' , 'ZH137072' , 'ZH137703' , 'ZH142270' , 'ZH96867' , 'ZH141454' , 'ZH141456' , 'ZH135613' , 'ZH135615')")
+genoMatCase=RDDcase.map(lambda v:splitByVariantID(v,dict_patient_case)).groupByKey()
+genoMatCase=genoMatCase.map(lambda (k,v):buildVariantVector(k,v,dict_patient_case))
 
-genoMatCase=RDDcase.map(splitByVariantID).groupByKey()
-genoMatCase=genoMatCase.map(lambda (k,v):buildVariantVector(k,v,sample_id_case))
+genoMatControl=RDDcontrol.map(lambda v:splitByVariantID(v,dict_patient_control)).groupByKey()
+genoMatControl=genoMatControl.map(lambda (k,v):buildVariantVector(k,v,dict_patient_control))
 
-genoMatControl=RDDcontrol.map(splitByVariantID).groupByKey()
-genoMatControl=genoMatControl.map(lambda (k,v):buildVariantVector(k,v,sample_id_control))
-
-genoMat=genoMatCase.fullOuterJoin(genoMatControl).map(lambda (k,v): fillMissing(k,v))
+genoMat=genoMatCase.leftOuterJoin(genoMatControl).map(lambda (k,v): fillMissing(k,v))
+#genoMat=genoMatCase.fullOuterJoin(genoMatControl).map(lambda (k,v): fillMissing(k,v))
 
 
-# In[72]:
+# In[188]:
 
 genoMat.count()
 
 
-# In[59]:
-
-#a=RDDcontrol.map(splitByVariantID).groupByKey().filter(lambda (k,v):k=='X:96171416:G:GT')
-
-
-# In[37]:
-
-#genoMatControl=RDDcontrol.map(splitByVariantID).groupByKey()
-
-
-# In[60]:
-
-#b=a.collect()
-
-
-# In[62]:
-
-#buildVariantVector(b[0][0],b[0][1],sample_id_control)
-
-
-# In[73]:
+# In[189]:
 
 #start_time = time.time()
 
@@ -306,10 +287,10 @@ if scope=='monogenic':
         scores=genoMat.map(lambda (k,v):scoreVariantUnivariate(k,v)).filter(lambda x:x is not None).takeOrdered(10000000, key=lambda (k,(v1,v2,v3)): -v1)
 
     if scale=='gene':
-        scores=genoMat.map(splitValues).groupByKey().map(lambda (k,v):scoreGeneUnivariate(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3)): -v1)
+        scores=genoMat.map(geneAsKey).groupByKey().map(lambda (k,v):scoreGeneUnivariate(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3)): -v1)
     
 if scope=='digenic':
-    genes=genoMat.map(getGene).distinct().takeOrdered(100000)#.flatMap(lambda (k,v):scoreCompound(k,v)).takeOrdered(100000, key=lambda (k,v1,v2,v3): -v1)
+    genes=genoMat.map(getGene).distinct().takeOrdered(100000).flatMap(lambda (k,v):scoreCompound(k,v)).takeOrdered(100000, key=lambda (k,v1,v2,v3): -v1)
     scores=genoMat.map(splitValues).groupByKey().flatMap(lambda (k,v):createPairsGenes(k,v,genes)).groupByKey().map(lambda (k,v):scoreDigenicGene(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3)): -v1)
 
 end_time=time.time()
@@ -317,19 +298,14 @@ runtime=end_time - start_time
 print(runtime)
 
 
-# In[74]:
+# In[190]:
 
-#list(genoMat.map(splitValues).groupByKey().filter(lambda (k,v):k=='DIAPH2').collect()[0][1])
-
-
-# In[66]:
-
-#sample_id_control
+#scores
 
 
-# In[30]:
+# In[192]:
 
-scores=[analysisName,scale,scope,start_time,end_time,runtime,scores,sample_id_case,sample_id_control,group1name,group2name]
+scores=[analysisName,scale,scope,start_time,end_time,runtime,scores,patient_case,patient_control,group1name,group2name]
 
 with open("analyses/"+analysisName+'.txt', 'w') as outfile:
     json.dump(scores, outfile)
