@@ -403,31 +403,31 @@ shinyServer(function(input, output,session) {
             setProgress(message = 'Retrieving control data, please wait...',
                         value=2)
             
-            if (sessionvalues$results$scale=="variant") {
-              if (sessionvalues$results$scope=="monogenic") {
-                variantsData<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,]
-                data<-read.table(("filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
-                sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
-                if (length(sqlControl)>0) {
-                  sqlControl<-paste0(sqlControl," and chr='",variantsData['Chr'],"' and position=",variantsData['Position']," and reference='",variantsData['Reference'],"' and alternative='",variantsData['Alternative'],"'")
-                  variantsControl<-loadData(sqlControl)$data
-                  nControl<-nrow(variantsControl)
-                }
-                else {
-                  variantsControl<-NULL
-                  nControl<-0
-                }
-                setProgress(message = 'Retrieving case data, please wait...',
-                            value=3)
-                sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
-                sqlCase<-paste0(sqlCase," and chr='",variantsData['Chr'],"' and position=",variantsData['Position']," and reference='",variantsData['Reference'],"' and alternative='",variantsData['Alternative'],"'")
-                variantsCase<-loadData(sqlCase)$data
-                variants<-rbind(variantsControl,variantsCase)
-                variants<-cbind("Group"=c(rep(sessionvalues$results$group1name,nControl),rep(sessionvalues$results$group2name,nrow(variantsCase))),variants)
-                sessionvalues$variantDataGene<-variants
-              }
-            }
-            
+#             if (sessionvalues$results$scale=="variant") {
+#               if (sessionvalues$results$scope=="monogenic") {
+#                 variantsData<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,]
+#                 data<-read.table(("filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
+#                 sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
+#                 if (length(sqlControl)>0) {
+#                   sqlControl<-paste0(sqlControl," and chr='",variantsData['Chr'],"' and position=",variantsData['Position']," and reference='",variantsData['Reference'],"' and alternative='",variantsData['Alternative'],"'")
+#                   variantsControl<-loadData(sqlControl)$data
+#                   nControl<-nrow(variantsControl)
+#                 }
+#                 else {
+#                   variantsControl<-NULL
+#                   nControl<-0
+#                 }
+#                 setProgress(message = 'Retrieving case data, please wait...',
+#                             value=3)
+#                 sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
+#                 sqlCase<-paste0(sqlCase," and chr='",variantsData['Chr'],"' and position=",variantsData['Position']," and reference='",variantsData['Reference'],"' and alternative='",variantsData['Alternative'],"'")
+#                 variantsCase<-loadData(sqlCase)$data
+#                 variants<-rbind(variantsControl,variantsCase)
+#                 variants<-cbind("Group"=c(rep(sessionvalues$results$group1name,nControl),rep(sessionvalues$results$group2name,nrow(variantsCase))),variants)
+#                 sessionvalues$variantDataGene<-variants
+#               }
+#             }
+#             
             if (sessionvalues$results$scale=="gene") {
               if (sessionvalues$results$scope=="monogenic") {
                 geneID<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,'Gene_Symbol']
