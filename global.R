@@ -158,7 +158,7 @@ loadData<-function(sql,noLimit=F,maxRows=1000) {
   else limit<-paste0(" limit ",maxRows)
   nbRowsExceededWarningMessage<-""
   if (nbrows>maxRows) {
-    nbRowsExceededWarningMessage<-paste0("<h4>Warning: Query returns <b>",nbrows," records</b>. First ",maxRows," retrieved.</h4>")
+    nbRowsExceededWarningMessage<-paste0("Warning: Query returns <b>",nbrows," records</b>. First ",maxRows," retrieved.")
   }
   
   data<-dbGetQuery(condb,paste0("select ",fields_select," from ",VARIANTS_TABLE," ",sql,limit))
