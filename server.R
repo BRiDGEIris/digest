@@ -10,7 +10,6 @@ library(shinyjs)
 require(jsonlite)
 library(RCurl)
 
-
 source("filterPhenotypes.R")
 source("filterVariants.R")
 
@@ -127,6 +126,7 @@ shinyServer(function(input, output,session) {
           if (length(i.users)>0) {
             if (input$passwordLogin==users$password[i.users]) {
               sessionvalues$logged_user<-input$userIDLogin
+              runjs("$('.modal-backdrop').remove();")
               runjs('$("body").removeClass("modal-open")')
             }
             else {
@@ -320,8 +320,9 @@ shinyServer(function(input, output,session) {
           jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlGroupMAF)
           setwd(paste0("users/",sessionvalues$logged_user))
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
-          startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true ../../spark/GVR.py &')
-          system(startCommand)
+          #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=hdfs://node001:8020/user/yleborgn/logs ../../spark/GVR.py &')
+          #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true ../../spark/GVR.py &')
+          system("../../connect.sh")
           setwd("../..")
         })
       }  
@@ -572,7 +573,7 @@ shinyServer(function(input, output,session) {
     source(connectFile)
     users<-sort(dbGetQuery(highlanderdb,paste0("select * from users"))$username[-1])
     dbDisconnect(highlanderdb)
-    genes<-sessionvalues$results$scoreSummaryRaw[,'Gene_Symbol1']
+    genes<-sessionvalues$results$scoreSummaryRaw[,'Gene_Symbol']
     patients<-c(sessionvalues$results$caseSampleID,sessionvalues$results$controlSampleID)
     fluidRow(
       column(12,

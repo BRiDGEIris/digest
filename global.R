@@ -1,8 +1,8 @@
-SPARK_HOME<-"/Users/yalb/spark"
+#SPARK_HOME<-"/Users/yalb/spark"
 #SPARK_HOME<-"/home/docker/spark"
 
-Sys.setenv(SPARK_HOME=SPARK_HOME)
-Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
+#Sys.setenv(SPARK_HOME=SPARK_HOME)
+#Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
 #.libPaths(c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib"), .libPaths()))
 #library(SparkR)
 
@@ -158,7 +158,7 @@ loadData<-function(sql,noLimit=F,maxRows=1000) {
   else limit<-paste0(" limit ",maxRows)
   nbRowsExceededWarningMessage<-""
   if (nbrows>maxRows) {
-    nbRowsExceededWarningMessage<-paste0("Warning: Query returns ",nbrows," records. First ",maxRows," retrieved.")
+    nbRowsExceededWarningMessage<-paste0("<h4>Warning: Query returns <b>",nbrows," records</b>. First ",maxRows," retrieved.</h4>")
   }
   
   data<-dbGetQuery(condb,paste0("select ",fields_select," from ",VARIANTS_TABLE," ",sql,limit))

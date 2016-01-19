@@ -61,7 +61,7 @@ shinyUI(
                                                     uiOutput("filterVariant"),
                                                     div(downloadButton('downloadVariantsSelection', label = "Download selection (CSV)",class = NULL),
                                                         align="right"),
-                                                    h5(textOutput("nbRowsExceededWarningMessage")),
+                                                    h5(htmlOutput("nbRowsExceededWarningMessage")),
                                                     uiOutput("showVarVariantsUI"),
                                                     dataTableOutput('variantsTable'),
                                                     hr(),
@@ -78,11 +78,11 @@ shinyUI(
                                                     h3("1) Variants group(s)"),
                                                     uiOutput("selectSampleGroup2UI"),
                                                     checkboxInput("includeControlGroup", "Include control group"),
-                                                    conditionalPanel(
-                                                      condition = "input.includeControlGroup==true",
-                                                      uiOutput("selectSampleGroup1UI"),
-                                                      textInput("controlGroupMAF","MAF threshold","0.01")
-                                                    )
+                                                    #conditionalPanel(
+                                                    #  condition = "input.includeControlGroup==true",
+                                                      uiOutput("selectSampleGroup1UI")
+                                                    #  textInput("controlGroupMAF","MAF threshold","0.01")
+                                                    #)
                                                     
                                              ),
                                              column(4,offset=1,
