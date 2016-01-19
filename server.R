@@ -554,8 +554,8 @@ shinyServer(function(input, output,session) {
         genes<-input$shareHighlanderGeneSelect
         username<-input$shareHighlanderUserSelect
         
-        result<-paste0("CUSTOM$&[patient!EQUAL!",paste0(patients,collapse="?"),"!!1!0#gene_symbol!EQUAL!",
-                        paste0(genes,collapse="?"),"!!1!0#]")
+        result<-paste0("CUSTOM$&[patient!EQUAL!",paste0(patients,collapse="?"),"!!0!0#gene_symbol!EQUAL!",
+                        paste0(genes,collapse="?"),"!!0!0#]")
         #browser()
         connectFile<-"../connectHighlander.R"
         source(connectFile)
@@ -574,7 +574,7 @@ shinyServer(function(input, output,session) {
     users<-sort(dbGetQuery(highlanderdb,paste0("select * from users"))$username[-1])
     dbDisconnect(highlanderdb)
     genes<-sessionvalues$results$scoreSummaryRaw[,'Gene_Symbol']
-    patients<-c(sessionvalues$results$caseSampleID,sessionvalues$results$controlSampleID)
+    patients<-c(sessionvalues$results$caseSampleID)
     fluidRow(
       column(12,
       selectInput('shareHighlanderUserSelect', 'Share with user', 

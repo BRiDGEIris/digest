@@ -122,7 +122,7 @@ getWidgetTable<-function(data,session,selection='none',targetsShort="_all") {
                     options = list(
                       ajax = list(url = action),
                       dom= 'lipt',
-                      lengthMenu = list(c(10, 100, 1000), c('10', '100','1000')),pageLength = 10,
+                      lengthMenu = list(c(20, 100, 1000), c('10', '100','1000')),pageLength = 20,
                       columnDefs = list(
                         list(
                           targets = c(1),
