@@ -1,10 +1,3 @@
-#SPARK_HOME<-"/Users/yalb/spark"
-#SPARK_HOME<-"/home/docker/spark"
-
-#Sys.setenv(SPARK_HOME=SPARK_HOME)
-#Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
-#.libPaths(c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib"), .libPaths()))
-#library(SparkR)
 
 require('RMySQL')
 require("jsonlite")
@@ -15,35 +8,48 @@ require('RJDBC')
 require('RCurl')
 require('queryBuildR')
 
-#VARIANTS<-"/home/docker/variantsulb"
-VARIANTS<-"/Users/yalb/Projects/Github/variant-ranking/variantsulb2"
-
-#VARIANTS_TABLE<-"gvr4.variantsulb"
-VARIANTS_TABLE<-'highlander.exomes_hc'
-##VARIANTS_TABLE<-"variants"
-#VARIANTS_TABLE<-"highlander"
-
 CliniPhenomeAPI<-"http://bridgeiris.ulb.ac.be:81/bridgeirisportal/search.php"
 
-IMPALA_CLASSPATH<-"impala-jdbc-0.5-2"
-IMPALA_SERVER<-"jdbc:hive2://127.0.0.1:21050/;auth=noSasl"
 
+USE_CLUSTER<-TRUE
 
-if (!file.exists("/tmp/spark-events")) {
-  dir.create("/tmp/spark-events")
+if (USE_CLUSTER) {
+  IMPALA_CLASSPATH<-"impala-jdbc-0.5-2"
+  IMPALA_SERVER<-"jdbc:hive2://127.0.0.1:21050/;auth=noSasl"
+  
+  drv <- JDBC(driverClass = "org.apache.hive.jdbc.HiveDriver",
+              classPath = list.files(IMPALA_CLASSPATH,pattern="jar$",full.names=T),
+              identifier.quote="`")
+
+  VARIANTS_TABLE<-'highlander.exomes_hc'
+  
+} else {
+  #SPARK_HOME<-"/home/docker/spark"
+  #VARIANTS<-"/home/docker/variantsulb"
+  SPARK_HOME<-"/Users/yalb/spark"
+  VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb"
+  
+  Sys.setenv(SPARK_HOME=SPARK_HOME)
+  Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
+  .libPaths(c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib"), .libPaths()))
+  library(SparkR)
+  require('shiny') #Necessary for column function
+  
+  if (!file.exists("/tmp/spark-events")) {
+    dir.create("/tmp/spark-events")
+  }
+  
+  sparkEnvir <- list('spark.sql.parquet.binaryAsString'='true') #Needed to read strings from Parquet
+  sc<-sparkR.init(master="local[4]",sparkEnvir=sparkEnvir)
+  sqlContext <- sparkRSQL.init(sc) #sparkRHive.init(sc)#
+  
+  VARIANTS_TABLE<-"variants"
+  
+  df <- read.df(sqlContext, VARIANTS, "parquet")
+  registerTempTable(df, VARIANTS_TABLE);
+  
 }
 
-drv <- JDBC(driverClass = "org.apache.hive.jdbc.HiveDriver",
-                        classPath = list.files(IMPALA_CLASSPATH,pattern="jar$",full.names=T),
-            identifier.quote="`")
-
-
-#sparkEnvir <- list('spark.sql.parquet.binaryAsString'='true') #Needed to read strings from Parquet
-#sc<-sparkR.init(master="local[12]",sparkEnvir=sparkEnvir)
-#sqlContext <- sparkRHive.init(sc)#sparkRSQL.init(sc)
-
-#df <- read.df(sqlContext, VARIANTS, "parquet")
-#registerTempTable(df, VARIANTS_TABLE);
 
 ######################
 #CliniPhenome
@@ -149,10 +155,13 @@ preprocSQL<-function(sql) {
 
 loadData<-function(sql,noLimit=F,maxRows=1000) {
   sql<-preprocSQL(sql)
-  
-  condb <- dbConnect(drv,IMPALA_SERVER )
-  nbrows<-dbGetQuery(condb,paste0("select count(*) from ",VARIANTS_TABLE," ",sql))
-  #nbrows<-collect(sql(sqlContext,paste0("select count(*) from ",VARIANTS_TABLE," ",sql)))
+  if (USE_CLUSTER) {
+    condb <- dbConnect(drv,IMPALA_SERVER )
+    nbrows<-dbGetQuery(condb,paste0("select count(*) from ",VARIANTS_TABLE," ",sql))
+  }
+  else {
+    nbrows<-collect(sql(sqlContext,paste0("select count(*) from ",VARIANTS_TABLE," ",sql)))
+  }
   
   if (noLimit) limit<-""
   else limit<-paste0(" limit ",maxRows)
@@ -161,22 +170,25 @@ loadData<-function(sql,noLimit=F,maxRows=1000) {
     nbRowsExceededWarningMessage<-paste0("Warning: Query returns <b>",nbrows," records</b>. First ",maxRows," retrieved.")
   }
   
-  data<-dbGetQuery(condb,paste0("select ",fields_select," from ",VARIANTS_TABLE," ",sql,limit))
-  #data<-collect(sql(sqlContext,paste0("select * from ",VARIANTS_TABLE," ",sql,limit)))
-    
-  dbDisconnect(condb)
+  if (USE_CLUSTER) {
+    data<-dbGetQuery(condb,paste0("select ",fields_select," from ",VARIANTS_TABLE," ",sql,limit))
+    dbDisconnect(condb)
+  }
+  else {
+    data<-collect(sql(sqlContext,paste0("select ",tolower(fields_select)," from ",VARIANTS_TABLE," ",sql,limit)))
+  }
   
   results<-list(data=data,nbRowsExceededWarningMessage=nbRowsExceededWarningMessage)
   results
 }
 
-getNbRows<-function(sql) {
-  sql<-preprocSQL(sql)
-  condb <- dbConnect(drv,IMPALA_SERVER )
-  nbrows<-dbGetQuery(condb,paste0("select count(*) from ",VARIANTS_TABLE," ",sql))
-  dbDisconnect(condb)
-  nbrows
-}
+#getNbRows<-function(sql) {
+#  sql<-preprocSQL(sql)
+#  condb <- dbConnect(drv,IMPALA_SERVER )
+#  nbrows<-dbGetQuery(condb,paste0("select count(*) from ",VARIANTS_TABLE," ",sql))
+#  dbDisconnect(condb)
+#  nbrows
+#}
 
 
 get4<-function(l) {l[[4]]}
@@ -222,7 +234,7 @@ procRes<-function(results) {
       colnames(scoreSummary2)<-c("Gene symbol1","Locus2","Reference2", "Alternative2","Gene symbol2")
       
     }
-
+    
     res$scoreSummary<-cbind(Score=t(res$scores),scoreSummary)
     colnames(res$scoreSummary)[1:3]<-c("Score","Score_Case","Score_Control")
     

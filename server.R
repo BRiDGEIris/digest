@@ -318,12 +318,13 @@ shinyServer(function(input, output,session) {
           }
           
           jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlGroupMAF)
-          setwd(paste0("users/",sessionvalues$logged_user))
+          setwd("spark")
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
           #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=hdfs://node001:8020/user/yleborgn/logs ../../spark/GVR.py &')
           #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true ../../spark/GVR.py &')
-          system("../../connect.sh")
-          setwd("../..")
+          #system("../../connect.sh")
+          system(paste0("./run_local.sh ",analysisName," ../users/",sessionvalues$logged_user,"/analyses"))
+          setwd("..")
         })
       }  
       else {

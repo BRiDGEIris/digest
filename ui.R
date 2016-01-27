@@ -33,9 +33,6 @@ shinyUI(
                                            tags$div(class="extraspace2"),
                                            fluidRow(
                                              column(12,
-                                                    bsModal("cliniPhenomeBS", "Answer from CliniPhenome", "connectCliniPhenome", 
-                                                            size = "large",htmlOutput('answerCliniPhenome')
-                                                    ),
                                                     uiOutput("filterPhenotype"),
                                                     div(
                                                       actionButton("getIDButtonPhenotypesGroup", label = "Get sample IDs"),
@@ -77,7 +74,7 @@ shinyUI(
                                              column(3,
                                                     h3("1) Variants group(s)"),
                                                     uiOutput("selectSampleGroup2UI"),
-                                                    checkboxInput("includeControlGroup", "Include control group"),
+                                                    #checkboxInput("includeControlGroup", "Include control group"),
                                                     #conditionalPanel(
                                                     #  condition = "input.includeControlGroup==true",
                                                       uiOutput("selectSampleGroup1UI")
