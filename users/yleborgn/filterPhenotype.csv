@@ -1,4 +1,0 @@
-"Name"	"SQL"
-"All"	""
-"ULB_NeuroDev"	"Data_Source = 'ULB' AND Pathology = 'NEURODEV'"
-"ULB_Control"	"Data_Source = 'ULB' AND Pathology = 'Control'"
