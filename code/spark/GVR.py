@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[21]:
+# In[88]:
 
 from pyspark import SparkContext, SparkConf
 from pyspark.sql import SQLContext
@@ -9,6 +9,7 @@ from pyspark.sql import HiveContext
 import json
 import time
 import sys
+from  scipy.stats import fisher_exact
 
 content = [line.rstrip() for line in open('jobsArguments.conf')]
 
@@ -20,7 +21,7 @@ sqlCase=content[4]
 group1name=content[5]
 group2name=content[6]
 
-nPartitions=4
+nPartitions=16
 conf = (SparkConf()
          .setMaster("local["+str(nPartitions)+"]")
          .setAppName(analysisName)
@@ -39,7 +40,7 @@ sc = SparkContext(conf=conf)
 
 
 
-# In[22]:
+# In[98]:
 
 #sqlContext = HiveContext(sc) #sqlContext._get_hive_ctx() #HiveContext(sc) 
 sqlContext = SQLContext(sc)
@@ -51,27 +52,27 @@ parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/digest/varian
 parquetFile.registerTempTable("parquetFile");
 
 
-# In[3]:
+# In[140]:
 
 #analysisName="control_vs_neurodev_rare_digenic"
 #group1name="control_ulb_rare_damaging"
 #group2name="neurodev_ulb_rare_damaging"
-#scope="digenic"
+scope="monogenic"
 #scale="gene"
 #controlMAF=0.5
 
 
-# In[4]:
+# In[100]:
 
 #RDDtest = sqlContext.sql("SELECT distinct patient from parquetFile")
 
 
-# In[5]:
+# In[101]:
 
 #RDDtest.count()
 
 
-# In[23]:
+# In[102]:
 
 #Input is vector patient, chr, pos, ref, alt, gene_symbol, zygosity
 def createKey_VariantGene(variantData):
@@ -79,7 +80,7 @@ def createKey_VariantGene(variantData):
     ID=variantData[1]+":"+str(variantData[2])+":"+variantData[3]+":"+variantData[4]
     #return ID, gene_symbol, patient, zygosity
     zygosity=2
-    if variantData[6]==1:
+    if variantData[6]=="Heterozygous":
         zygosity=1
     patientsID_dictionnary=patientsID_dictionnary_b.value
     patientIndex=patientsID_dictionnary[variantData[0]]
@@ -97,7 +98,7 @@ def buildVariantVector(ID,variantData,patientsID):
 
 
 
-# In[24]:
+# In[103]:
 
 #variantGeneEntry: key is (variantID,gene), value is (patientIndex,zygosity)
 def geneAsKey(variantGeneEntry):    
@@ -114,7 +115,7 @@ def f(splitIndex ,v):
     return [(splitIndex,list(v))]
 
 
-# In[25]:
+# In[104]:
 
 def scoreVariantUnivariate(k,variantData):
     variantData=list(variantData)
@@ -133,16 +134,10 @@ def scoreVariantUnivariate(k,variantData):
         return (k,(score,sumCase,sumControl))
 
 
-# In[26]:
+# In[105]:
 
-#variantList is [(locusID,[sample_index,genotype])]
-def scoreGeneUnivariate(gene_symbol,variantList):
-    variantList=list(variantList)
-    
-    patientsID_dictionnary=patientsID_dictionnary_b.value
+def getGenotypeVectorByGene(gene_symbol,variantList,patientsID_dictionnary,patientsID_split_index):
     genoSum=[0]*len(patientsID_dictionnary)
-    
-    patientsID_split_index=patientsID_split_index_b.value
     
     if len(variantList)>0:
         #Go through list of variants
@@ -154,69 +149,77 @@ def scoreGeneUnivariate(gene_symbol,variantList):
             #Go through list of sample_index,genotype
             for j in range(0,len(sample_geno_list)):
                 genoSum[sample_geno_list[j][0]]=genoSum[sample_geno_list[j][0]]+sample_geno_list[j][1]
-        sumCase=sum([int(x>0) for x in genoSum[0:patientsID_split_index]])
-        sumControl=sum([int(x>0) for x in genoSum[(patientsID_split_index+1):len(patientsID_dictionnary)]])
-        score=sumCase-sumControl
+    return genoSum
 
+
+# In[146]:
+
+#variantList is [(locusID,[sample_index,genotype])]
+def scoreGene(gene_symbol,variantList):
+    variantList=list(variantList)
+    
+    patientsID_dictionnary=patientsID_dictionnary_b.value
+    genoSum=[0]*len(patientsID_dictionnary)
+    
+    patientsID_split_index=patientsID_split_index_b.value
+    
+    genoSum=getGenotypeVectorByGene(gene_symbol,variantList,patientsID_dictionnary,patientsID_split_index)
+    
+    sumCase=float(sum([int(x>0) for x in genoSum[0:patientsID_split_index]]))
+    sumControl=float(sum([int(x>0) for x in genoSum[(patientsID_split_index+1):len(patientsID_dictionnary)]]))
+    
+    ratioCase=sumCase/patientsID_split_index
+    ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
+        
+    score=ratioCase-ratioControl
+    pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
+        
     if score>0:
-        return (gene_symbol,(score,sumCase,sumControl))
-    #return (gene_symbol,(genoSum))
+        return (gene_symbol,(score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
 
 
-# In[27]:
+# In[129]:
 
-def scoreDigenicGene(variantLists):
-    variantLists=list(variantLists)
-    geno1sumcase=[]
-    geno1sumcontrol=[]
-    geno2sumcase=[]
-    geno2sumcontrol=[]
+def scoreGenePair(gene_symbol_pair,variantList):
+    
+    variantList=list(variantList)
+    
+    patientsID_dictionnary=patientsID_dictionnary_b.value
+    
+    patientsID_split_index=patientsID_split_index_b.value
+    
     score=0
-    if len(variantLists)==2:
-        (genes,variantList1)=list(variantLists[0])
-        (genes,variantList2)=list(variantLists[1])
+    if len(variantList)==2:
+        (genes,variantList1)=variantList[0]
+        (genes,variantList2)=variantList[1]
+        
         gene1=genes[0]
         gene2=genes[1]
+        
         variantList1=list(variantList1)
         variantList2=list(variantList2)
-        for i in range(0,len(variantList1)):
-            (locus1,geno1)=variantList1[i]
-            if geno1sumcase==[]:
-                geno1sumcase=[int(x) for x in geno1[0]]
-                geno1sumcontrol=[int(x) for x in geno1[1]]
-            else:
-                geno1sumcase=[int(x)+int(y) for x,y in zip(geno1sumcase,geno1[0])]
-                geno1sumcontrol=[int(x)+int(y) for x,y in zip(geno1sumcontrol,geno1[1])]
-                
-        for i in range(0,len(variantList2)):
-            (locus2,geno2)=variantList2[i]
-            if geno2sumcase==[]:
-                geno2sumcase=[int(x) for x in geno2[0]]
-                geno2sumcontrol=[int(x) for x in geno2[1]]
-            else:
-                geno2sumcase=[int(x)+int(y) for x,y in zip(geno2sumcase,geno2[0])]
-                geno2sumcontrol=[int(x)+int(y) for x,y in zip(geno2sumcontrol,geno2[1])]
-                
-        genosumcase=[int((x>0) & (y>0)) for x,y in zip(geno1sumcase,geno2sumcase)]
-        genosumcontrol=[int((x>0) & (y>0)) for x,y in zip(geno1sumcontrol,geno2sumcontrol)]
         
-        sumCase=sum([int(x>0) for x in genosumcase])
-        sumControl=sum([int(x>0) for x in genosumcontrol])
+        genoSum1=getGenotypeVectorByGene(gene1,variantList1,patientsID_dictionnary,patientsID_split_index)
+        genoSum2=getGenotypeVectorByGene(gene2,variantList2,patientsID_dictionnary,patientsID_split_index)
         
-        meanControl=0
-        if len(genosumcontrol)>0:
-            meanControl=round(float(sumControl)/len(genosumcontrol),2)
+        genoSum=[int(x>0 and y>0) for x,y in zip(genoSum1,genoSum2)]
         
-        score=sumCase
+        sumCase=float(sum([int(x>0) for x in genoSum[0:patientsID_split_index]]))
+        ratioCase=sumCase/patientsID_split_index
+        sumControl=float(sum([int(x>0) for x in genoSum[(patientsID_split_index+1):len(patientsID_dictionnary)]]))
+        ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
+        
+        score=ratioCase-ratioControl
+        pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
         
         if score>0:
-            if meanControl<=controlMAF_b.value:
-                return (k,((gene1,gene2),score,sumCase,meanControl))
+            return (gene_symbol_pair,((gene1,gene2),score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
 
-def getGene(variantData):
-    variantGene=variantData[0][1]
+#Key is (variantID, gene)
+def getGene(variantGene_key):
+    gene=variantGene_key[1]
     
-    return (variantGene)
+    return (gene)
 
 def createPairsGenes(k,v,genes):
     return [(str(sorted([k,gene])),(sorted([k,gene]),v)) for gene in genes]
@@ -238,7 +241,12 @@ def fillMissing(k,v):
     return (k,v)
 
 
-# In[28]:
+# In[108]:
+
+float(15)/2
+
+
+# In[141]:
 
 start_time = time.time()
 
@@ -265,34 +273,48 @@ variants=variants_control.unionAll(variants_case)
 variants_grouped=variants.map(createKey_VariantGene).groupByKey()
 
 
-# In[29]:
+# In[150]:
 
 #start_time = time.time()
+ntests=0
 
 if scope=='monogenic':
     if scale=='variant':
         scores=genoMat.map(lambda (k,v):scoreVariantUnivariate(k,v)).filter(lambda x:x is not None).takeOrdered(10000000, key=lambda (k,(v1,v2,v3)): -v1)
 
     if scale=='gene':
-        scores=variants_grouped.map(geneAsKey).groupByKey().map(lambda (k,v):scoreGeneUnivariate(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3)): -v1)
-    
+        variants_grouped_by_gene=variants_grouped.map(geneAsKey).groupByKey()
+        ntests=variants_grouped_by_gene.count()
+        scores=variants_grouped_by_gene.map(lambda (k,v):scoreGene(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3,v4,v5,v6)): -v1)
 if scope=='digenic':
-    genes=genoMat.map(getGene).distinct().takeOrdered(100000).flatMap(lambda (k,v):scoreCompound(k,v)).takeOrdered(100000, key=lambda (k,v1,v2,v3): -v1)
-    scores=genoMat.map(splitValues).groupByKey().flatMap(lambda (k,v):createPairsGenes(k,v,genes)).groupByKey().map(lambda (k,v):scoreDigenicGene(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3)): -v1)
-
+    variants_grouped_by_gene=variants_grouped.map(geneAsKey).groupByKey()#.flatMap(lambda (k,v):createPairsGenes(k,v,genes)).groupByKey().map(lambda (k,v):scoreGenePair(k,v))#.filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3)): -v1)
+    genes=variants_grouped_by_gene.keys().collect()
+    scores=variants_grouped_by_gene.flatMap(lambda (k,v):createPairsGenes(k,v,genes)).groupByKey().map(lambda (k,v):scoreGenePair(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3,v4,v5,v6)): -v1)
+    ntests=len(genes)*(len(genes)+1)/2
+    
 end_time=time.time()
 runtime=end_time - start_time
 print(runtime)
 
 
-# In[30]:
+# In[151]:
 
-scores[0:20]
+len(scores)
 
 
-# In[14]:
+# In[149]:
 
-scores=[analysisName,scale,scope,start_time,end_time,runtime,scores,patientsID_case,patientsID_control,group1name,group2name]
+scores[0:3]
+
+
+# In[50]:
+
+#analysisName="neurodev_vs_control_digenic_rare_high"
+
+
+# In[152]:
+
+scores=[analysisName,scale,scope,start_time,end_time,runtime,scores,patientsID_case,patientsID_control,group1name,group2name,ntests]
 
 with open(analysisName+'.txt', 'w') as outfile:
     json.dump(scores, outfile)

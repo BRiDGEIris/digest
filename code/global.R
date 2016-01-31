@@ -10,10 +10,14 @@ require('queryBuildR')
 
 CliniPhenomeAPI<-"http://bridgeiris.ulb.ac.be:81/bridgeirisportal/search.php"
 
-
 USE_CLUSTER<-TRUE
 
 if (USE_CLUSTER) {
+  SPARK_HOME<-"/home/shiny/spark"
+  SPARK_HOME<-"/Users/yalb/spark"
+  Sys.setenv(SPARK_HOME=SPARK_HOME)
+  Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
+  
   IMPALA_CLASSPATH<-"impala-jdbc-0.5-2"
   IMPALA_SERVER<-"jdbc:hive2://127.0.0.1:21050/;auth=noSasl"
   
@@ -22,6 +26,7 @@ if (USE_CLUSTER) {
               identifier.quote="`")
 
   VARIANTS_TABLE<-'highlander.exomes_hc'
+#  VARIANTS_TABLE<-'gdegols.exomes_1000g'
   
 } else {
   #SPARK_HOME<-"/home/docker/spark"
@@ -58,7 +63,8 @@ if (USE_CLUSTER) {
 #This function retrieve the phenotype data from CliniPhenome API
 updatePhenotypeTable<-function() {
   phenotypes<-fromJSON(getURL("http://bridgeiris.ulb.ac.be/cliniphenome/searchcp?ont_keyword=all"))
-  phenotypes<-phenotypes[which(phenotypes[,2]>7),]
+  phenotypes<-phenotypes[which(phenotypes[,1]!="UZ Brussel"),]
+  phenotypes<-phenotypes[which(phenotypes[,1]!=""),]
   
   phenotypesdb <- dbConnect(RSQLite::SQLite(), "phenotypes.db")
   colnames(phenotypes)<-c("Data_Source","Sample_ID","Pathology","Gender","Super_Population")
@@ -75,7 +81,7 @@ updatePhenotypeTable<-function() {
   save(file="filterPhenotypeSpec.Rdata",filters)
 }
 
-updatePhenotypeTable()
+#updatePhenotypeTable()
 
 #Retrieve phenotype table from local DB
 loadPhenotypes<-function(sql) {
@@ -106,20 +112,11 @@ fieldsToKeep<-c("patient","chr","pos","reference","alternative","zygosity","read
                 "pph2_hvar_score", "pph2_hvar_pred", "sift_score", "sift_pred", "short_tandem_repeat","variant_confidence_by_depth")
 fields_select<-paste(unique(c(fieldsToKeep)),collapse=",")
 
-#########
-#LDAP
-#########
+######################
+#Generic functions
+#####################
 
-connectLDAP<-function() {
-  #curl -u cn=yann,dc=example,dc=org 'ldap://192.168.99.100/cn=yann,dc=example,dc=org'
-  library("RCurl")
-  getURL('ldap://192.168.99.100/cn=yann,dc=example,dc=org',.opts=list(userpwd = "cn=yann,dc=example,dc=org:test"))
-  
-}
-
-
-
-getWidgetTable<-function(data,session,selection='none',targetsShort="_all") {
+getWidgetTable<-function(data,session,selection='none') {
   action <- dataTableAjax(session, data,rownames=F)
   widget<-datatable(data, 
                     rownames=F,
@@ -182,13 +179,9 @@ loadData<-function(sql,noLimit=F,maxRows=1000) {
   results
 }
 
-#getNbRows<-function(sql) {
-#  sql<-preprocSQL(sql)
-#  condb <- dbConnect(drv,IMPALA_SERVER )
-#  nbrows<-dbGetQuery(condb,paste0("select count(*) from ",VARIANTS_TABLE," ",sql))
-#  dbDisconnect(condb)
-#  nbrows
-#}
+######################
+#Process results
+#####################
 
 
 get4<-function(l) {l[[4]]}
@@ -242,26 +235,37 @@ procRes<-function(results) {
   
   if (res$scale=="gene") {
     if (res$scope=="monogenic") {
+      #browser()
       geneID<-res$locus
       geneID_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID,"' target='_blank'>",geneID,"</a>")
+      res$scores[1,]<-format(as.numeric(res$scores[1,]),scientific=FALSE,digits=3)
+      res$scores[2,]<-format(as.numeric(res$scores[2,]),scientific=TRUE,digits=3)
+      res$scores[3,]<-format(as.numeric(res$scores[3,]),scientific=FALSE,digits=3)
+      res$scores[4,]<-format(as.numeric(res$scores[4,]),scientific=FALSE,digits=3)
       res$scoreSummaryRaw<-cbind(t(res$scores),geneID)
-      colnames(res$scoreSummaryRaw)<-c("Score","Score_Case","Score_Control","Gene_Symbol")
+      colnames(res$scoreSummaryRaw)<-c("Ratio_Difference","P_Value","Ratio_Case","Ratio_Control","Score_Case","Score_Control","Gene_Symbol")
       res$scoreSummary<-cbind(t(res$scores),geneID_Link)
-      colnames(res$scoreSummary)<-c("Score","Score_Case","Score_Control","Gene_Symbol")
+      colnames(res$scoreSummary)<-c("Ratio_Difference","P_Value","Ratio_Case","Ratio_Control","Score_Case","Score_Control","Gene_Symbol")
     }
     
     if (res$scope=="digenic") {
       genes<-ldply(res$scores[1,])
-      res$scores<-res$scores[2:4,]
+      res$scores<-data.matrix(data.frame(res$scores[2:7,]))
+      res$scores[1,]<-format(as.numeric(res$scores[1,]),scientific=FALSE,digits=3)
+      res$scores[2,]<-format(as.numeric(res$scores[2,]),scientific=TRUE,digits=3)
+      res$scores[3,]<-format(as.numeric(res$scores[3,]),scientific=FALSE,digits=3)
+      res$scores[4,]<-format(as.numeric(res$scores[4,]),scientific=FALSE,digits=3)
+      
       geneID1<-genes[,1]
       geneID1_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID1,"' target='_blank'>",geneID1,"</a>")
       geneID2<-genes[,2]
       geneID2_Link<-paste0("<a href='http://www.ncbi.nlm.nih.gov/omim/?term=",geneID2,"' target='_blank'>",geneID2,"</a>")
       res$scoreSummaryRaw<-cbind(t(res$scores),geneID1,geneID2)
-      colnames(res$scoreSummaryRaw)<-c("Score","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
+      colnames(res$scoreSummaryRaw)<-c("Ratio_Difference","P_Value","Ratio_Case","Ratio_Control","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
       res$scoreSummary<-cbind(t(res$scores),geneID1_Link,geneID2_Link)
-      colnames(res$scoreSummary)<-c("Score","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
+      colnames(res$scoreSummary)<-c("Ratio_Difference","P_Value","Ratio_Case","Ratio_Control","Score_Case","Score_Control","Gene_Symbol1","Gene_Symbol2")
     }
+    #browser()
   }
   res
 }
@@ -287,8 +291,17 @@ dummy<-function() {
   
   data[which(data[,1]=="ULB"),5]<-""
   write.table(file="phenotypes.csv",data,col.names=T,row.names=F,sep=',')
+
+  gene_list<-read.table("Guillaume_genes_new.txt",stringsAsFactor=F)[,1]
+  gene_list_str<-paste0(gene_list,collapse=',')
+  
+  gene_list<-read.table("gene_sarah.txt",stringsAsFactor=F)[,1]
+  gene_list_str<-paste0(gene_list,collapse=',')
+  
+  #ARHGAP11B,ASPM,ATR,ATRIP,BLM,BRAT1,C7orf27,BUB1B,CASC5,CASK,CCDC7,CDC6,CDK5RAP2,CDT1,CENPF,CENPJ,CEP135,CEP152,CEP250,CEP63,CIT,COX7B,DYRK1A,EFTUD2,EIF2AK3,ERCC3,ERCC4,ERCC5,ERCC6,ERCC8,IER3IP1,KIF11,KMT2B,MLL4,MLL2,LIG4,MCPH1,MYCN,NBN,NDE1,NIN,NIPBL,ORC1,ORC1L,ORC4,ORC4L,ORC6,ORC6L,PCNT,PHC1,PLK4,PNKP,PPM1D,RAD50,RBBP8,RNU4ATAC,SASS6,SLC25A19,SLC9A6,SMC1A,SMC3,STAMBP,STIL,TRMT10A,RG9MTD2,TUBA1A,TUBB,TUBB2B,TUBB3,TUBG1,TUBGCP4,TUBGCP6,UBE3A,WDR62,ZEB2
   
   
 }
+
 
 

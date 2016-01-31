@@ -29,28 +29,12 @@ shinyServer(function(input, output,session) {
   output<-createFilterPhenotype(input,output,session,sessionvalues)
   output<-createFilterVariant(input,output,session,sessionvalues)
   
-  
-  #   output$CP<-renderText({
-  #     res<-""
-  #     query<-input$queryid
-  #     if (length(query)>0) {
-  #       query<-substr(query,2,nchar(query))
-  #       if (query!="") {
-  #         updateTabsetPanel(session, "tabset", selected = "Gene & variant filtering manager")
-  #         #session$sendCustomMessage(type='filterVariantCallbackHandlerLoad', "Sample_ID in ('AJT19')")
-  #         res<-query
-  #       }
-  #     }
-  #     res
-  #   })
-  #   
   observe({
     query<-input$queryid
     if (length(query)>0) {
       query<-substr(query,2,nchar(query))
       if (query!="") {
         updateTabsetPanel(session, "tabset", selected = "Gene & variant filtering manager")
-        #    session$sendCustomMessage(type='filterVariantCallbackHandlerLoad', "Sample_ID in ('AJT19')")
       }
     }
   })
@@ -84,7 +68,6 @@ shinyServer(function(input, output,session) {
           strong("Not logged in. "),
           actionButton("loginButton", icon("log-in","fa-2x",lib="glyphicon"),tooltip="Log in"),
           bsAlert("alertLogin"),
-          #actionButton('connectCliniPhenome', label = "Connect CliniPhenome",class = NULL),
           align="right"),
           bsModal("modalLogin", "Login", "loginButton", 
                   size = "small",
@@ -158,13 +141,14 @@ shinyServer(function(input, output,session) {
   ####################################################
   
   
-  #Get IDs samples
+  #Get sample IDs button
   output$listSamplesIDs<-renderText({
     listIDs<-sessionvalues$phenotypes$Sample_ID
     result<-paste(listIDs,sep="",collapse=" , ")
     result
   })
   
+  #If apply filter, update phenotype table
   observe({
     if (length(input$filterPhenotypeQueryBuilderSQL)>0)
       sessionvalues$phenotypes<-loadPhenotypes(input$filterPhenotypeQueryBuilderSQL)
@@ -231,7 +215,6 @@ shinyServer(function(input, output,session) {
       niceNames<-as.vector(sapply(colnames(sessionvalues$variants),idToName))
       niceNames<-colnames(sessionvalues$variants)
       selectInput('showVarVariants', 'Select variables to display', niceNames, 
-                  #              selected=niceNames[c(1,36:37,39,2:7)],multiple=TRUE, selectize=TRUE,width='1050px')
                   selected=niceNames[c(1,2:7)],multiple=TRUE, selectize=TRUE,width='1050px')
     })
   })
@@ -239,7 +222,6 @@ shinyServer(function(input, output,session) {
   output$variantsTable<-DT::renderDataTable({
     if (length(input$showVarVariants)>0) {
       data<-sessionvalues$variants[,input$showVarVariants]
-      #data<-sessionvalues$variants[,sapply(input$showVarVariants,nameToId)]
       data[is.na(data)]<-''
       colnames(data)<-input$showVarVariants
       getWidgetTable(data,session)
@@ -264,12 +246,12 @@ shinyServer(function(input, output,session) {
   })
   
   ####################################################
-  #Ranking engine
+  #Scoring tool
   ####################################################
   
   output$selectSampleGroup1UI<-renderUI({
     input$filterVariantConfirmSave
-    variantsGroup<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
+    variantsGroup<-read.table(sessionvalues$variantGroupFile,header=T,stringsAsFactors=F,colClasses=c("character","character"))
     selectInput('selectSampleGroup1', 'Control group', 
                 choices = list("Groups"=variantsGroup$Name), 
                 selected=variantsGroup$Name[1],
@@ -278,7 +260,7 @@ shinyServer(function(input, output,session) {
   
   output$selectSampleGroup2UI<-renderUI({
     input$filterVariantConfirmSave
-    variantsGroup<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
+    variantsGroup<-read.table(sessionvalues$variantGroupFile,header=T,stringsAsFactors=F,colClasses=c("character","character"))
     selectInput('selectSampleGroup2', 'Case group', 
                 choices = list("Groups"=variantsGroup$Name), 
                 selected=variantsGroup$Name[1],
@@ -295,12 +277,11 @@ shinyServer(function(input, output,session) {
       
       if (analysisName!='') {
         analysis<-list()
-        variantsGroup<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
+        variantsGroup<-read.table(sessionvalues$variantGroupFile,header=T,stringsAsFactors=F,colClasses=c("character","character"))
         
         isolate({
           sampleGroup1name<-input$selectSampleGroup1
           sampleGroup2name<-input$selectSampleGroup2
-          controlGroupMAF<-input$controlGroupMAF
           
           selectSampleGroupIndex2<-which(variantsGroup$Name==sampleGroup2name)
           group2sql<-variantsGroup$SQL[selectSampleGroupIndex2]
@@ -314,10 +295,9 @@ shinyServer(function(input, output,session) {
           else {
             sampleGroup1name<-"NULL"
             group1sql<-"NULL"
-            controlGroupMAF<-"NULL"
           }
           
-          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlGroupMAF)
+          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name)
           setwd("spark")
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
           #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=hdfs://node001:8020/user/yleborgn/logs ../../spark/GVR.py &')
@@ -367,11 +347,11 @@ shinyServer(function(input, output,session) {
       if (sessionvalues$results$scale=="gene") {
         if (sessionvalues$results$scope=="monogenic") {
           niceNames<-as.vector(sapply(colnames(sessionvalues$results$scoreSummary),idToName))
-          initialSelect<-niceNames[1:4]
+          initialSelect<-niceNames
         }
         if (sessionvalues$results$scope=="digenic") {
           niceNames<-as.vector(sapply(colnames(sessionvalues$results$scoreSummary),idToName))
-          initialSelect<-niceNames[c(1:5)]
+          initialSelect<-niceNames
         }
       }
       selectInput('showVarResults', 'Select variables to display', niceNames, 
@@ -385,9 +365,9 @@ shinyServer(function(input, output,session) {
       nameAnalysis<-input$selectAnalysis
       if (length(setdiff(sapply(input$showVarResults,nameToId),colnames(sessionvalues$results$scoreSummary)))==0) {
         data<-sessionvalues$results$scoreSummary[,sapply(input$showVarResults,nameToId)]
-        targetsShort<-which(colnames(data)!="Gene_Symbol")
+        #targetsShort<-which(colnames(data)!="Gene_Symbol")
         colnames(data)<-input$showVarResults
-        getWidgetTable(data,session,selection='single',targetsShort=targetsShort)
+        getWidgetTable(data,session,selection='single')#,targetsShort=targetsShort)
       }
     }
   },server=TRUE)
@@ -431,8 +411,7 @@ shinyServer(function(input, output,session) {
 #             
             if (sessionvalues$results$scale=="gene") {
               if (sessionvalues$results$scope=="monogenic") {
-                geneID<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,'Gene_Symbol']
-                geneID<-strsplit(geneID,'<|>')[[1]][3]
+                geneID<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol']
                 data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
                 sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
                 if (length(sqlControl)>0) {
@@ -455,10 +434,8 @@ shinyServer(function(input, output,session) {
                 sessionvalues$variantDataGene<-variants
               }
               if (sessionvalues$results$scope=="digenic") {
-                geneID1<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,'Gene_Symbol1']
-                geneID1<-strsplit(geneID1[[1]],'<|>')[[1]][3]
-                geneID2<-sessionvalues$results$scoreSummary[input$resultsTable_rows_selected,'Gene_Symbol2']
-                geneID2<-strsplit(geneID2[[1]],'<|>')[[1]][3]
+                geneID1<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol1']
+                geneID2<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol2']
                 data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
                 sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
                 if (length(sqlControl)>0) {
@@ -472,7 +449,7 @@ shinyServer(function(input, output,session) {
                 }
                 setProgress(message = 'Retrieving case data, please wait...',
                             value=3)
-                data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
+                data<-read.table(sessionvalues$variantGroupFile,header=T,stringsAsFactors=F,colClasses=c("character","character"))
                 sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group2name)]
                 sqlCase<-paste0(sqlCase," and (gene_symbol='",geneID1,"' or gene_symbol='",geneID2,"')")
                 variantsCase<-loadData(sqlCase)$data
@@ -525,8 +502,8 @@ shinyServer(function(input, output,session) {
              strong("Total run time: ")
       ),
       column(4,
-             sessionvalues$results$group1name,br(),
-             sessionvalues$results$group2name,br(),
+             paste0(sessionvalues$results$group1name," (n=",length(sessionvalues$results$caseSampleID),")"),br(),
+             paste0(sessionvalues$results$group2name," (n=",length(sessionvalues$results$controlSampleID),")"),br(),
              sessionvalues$results$start_time,br(),
              sessionvalues$results$end_time,br(),
              paste(sessionvalues$results$run_time, "seconds")

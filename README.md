@@ -6,6 +6,9 @@ DiGeST is a gene/variant scoring tool, that takes as input two populations (case
 Documentation:
 
 * [Installation](../master/doc/install.md)
+* [Configuration](../master/doc/configuration.md)
+* [Files](../master/doc/files.md)
+* [API](../master/doc/API.md)
 
 
 

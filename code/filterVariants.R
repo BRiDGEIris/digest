@@ -94,7 +94,7 @@ createFilterVariant<-function(input,output,session,sessionvalues) {
         selected<-input$filterVariantSelectDelete
         data<-data[-match(selected,data$Name),]
         colnames(data)<-c("Name","SQL")
-        write.table(file=("filterVariant.csv"),data,row.names=F,col.names=T,sep="\t")
+        write.table(file=sessionvalues$variantGroupFile,data,row.names=F,col.names=T,sep="\t")
         toggleModal(session, "filterVariantModalDelete", toggle = "close")
       }
     })

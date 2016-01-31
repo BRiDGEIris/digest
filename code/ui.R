@@ -13,14 +13,13 @@ shinyUI(
         img(src="mgbck.jpg", height = 150, width = 1000)
       ),
       tags$script("$(document).ready(function() {
-                    language=window.location.search.split('?sample_id=')
-                    $('#queryid').val(language)
+                    sampleid=window.location.search.split('?sample_id=')
+                    $('#sampleid').val(sampleid)
                 });"),
-      tags$input(id = 'queryid', type = 'text', style = 'display:none;'),
+      tags$input(id = 'sampleid', type = 'text', style = 'display:none;'),
       tags$div(class="extraspace2"),
       fluidRow(
         shiny::column(12,
-                      #textOutput("CP"),
                       uiOutput("loginUI"),
                       tabsetPanel(id="tabset",
                                   #tabPanel("Home", 
@@ -85,8 +84,8 @@ shinyUI(
                                              column(4,offset=1,
                                                     h3("2) Scoring parameters"),
                                                     radioButtons("rankingScale", "Ranking scale",
-                                                                 c("Gene" = "gene",
-                                                                   "Variant" = "variant"
+                                                                 c("Gene" = "gene"#,
+                                                                   #"Variant" = "variant"
                                                                  )),
                                                     radioButtons("rankingScope", "Scope",
                                                                  c("Monogenic" = "monogenic",
