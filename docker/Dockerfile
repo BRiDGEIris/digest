@@ -49,6 +49,8 @@ RUN mv spark-1.6.0 spark
 WORKDIR /home/shiny/spark
 ENV MAVEN_OPTS="-Xmx2g -XX:MaxPermSize=512M -XX:ReservedCodeCacheSize=512m"
 RUN mvn -Pyarn -Phadoop-2.6 -Dhadoop.version=2.6.0 -Dyarn.version=2.6.0 -DskipTests -Psparkr -Phive -Phive-thriftserver clean package
+ENV SPARK_HOME /home/shiny/spark
+ENV PATH $SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
 
 #################################
 #The following is for connecting with Highlander/Cluster
@@ -72,7 +74,9 @@ RUN chown -R shiny:shiny /home/shiny/.ssh
 ##################################
 
 #Install DiGeST
-
+WORKDIR /srv/shiny-server
+RUN git clone https://github.com/Yannael/digest
+RUN chown shiny:shiny -R digest
 
 #Make silent SSH connection to cluster, and start Shiny server
 ADD startupscript.sh /usr/bin/startupscript.sh
