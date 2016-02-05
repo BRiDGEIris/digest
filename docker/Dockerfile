@@ -52,6 +52,11 @@ RUN mvn -Pyarn -Phadoop-2.6 -Dhadoop.version=2.6.0 -Dyarn.version=2.6.0 -DskipTe
 ENV SPARK_HOME /home/shiny/spark
 ENV PATH $SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
 
+#Needed for statistical tests in ranking
+USER root
+RUN apt-get install -y python-numpy python-scipy python-matplotlib ipython ipython-notebook python-pandas python-sympy python-nose
+
+
 #################################
 #The following is for connecting with Highlander/Cluster
 
@@ -64,19 +69,20 @@ ENV PATH $SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
 #ADD connectHighlander.R /srv/shiny-server/connectHighlander.R
 
 #Cluster
-USER root
 RUN mkdir /home/shiny/.ssh
 ADD id_rsa /home/shiny/.ssh/id_rsa
 ADD known_hosts /home/shiny/.ssh/known_hosts
 RUN chown -R shiny:shiny /home/shiny/.ssh
+RUN chmod 600 -R /home/shiny/.ssh
 #ADD connect.sh /srv/shiny-server/digest/connect.sh
 #ADD run.sh /srv/shiny-server/digest/run.sh
 ##################################
 
+
 #Install DiGeST
-WORKDIR /srv/shiny-server
-RUN git clone https://github.com/Yannael/digest
-RUN chown shiny:shiny -R digest
+#WORKDIR /srv/shiny-server
+#RUN git clone https://github.com/Yannael/digest
+#RUN chown shiny:shiny -R digest
 
 #Make silent SSH connection to cluster, and start Shiny server
 ADD startupscript.sh /usr/bin/startupscript.sh

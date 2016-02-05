@@ -73,11 +73,12 @@ shinyUI(
                                              column(3,
                                                     h3("1) Variants group(s)"),
                                                     uiOutput("selectSampleGroup2UI"),
+                                                    textInput("caseGroupMAF","MAF threshold","0.5"),
+                                                    uiOutput("selectSampleGroup1UI"),
+                                                    textInput("controlGroupMAF","MAF threshold","0.5")
                                                     #checkboxInput("includeControlGroup", "Include control group"),
                                                     #conditionalPanel(
                                                     #  condition = "input.includeControlGroup==true",
-                                                      uiOutput("selectSampleGroup1UI")
-                                                    #  textInput("controlGroupMAF","MAF threshold","0.01")
                                                     #)
                                                     
                                              ),

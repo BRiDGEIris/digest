@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[88]:
+# In[86]:
 
 from pyspark import SparkContext, SparkConf
 from pyspark.sql import SQLContext
@@ -20,8 +20,11 @@ sqlControl=content[3]
 sqlCase=content[4]
 group1name=content[5]
 group2name=content[6]
+controlMAF=content[7]
+caseMAF=content[8]
+pathVariants=content[9]
 
-nPartitions=16
+nPartitions=8
 conf = (SparkConf()
          .setMaster("local["+str(nPartitions)+"]")
          .setAppName(analysisName)
@@ -40,44 +43,45 @@ sc = SparkContext(conf=conf)
 
 
 
-# In[98]:
+# In[87]:
 
 #sqlContext = HiveContext(sc) #sqlContext._get_hive_ctx() #HiveContext(sc) 
 sqlContext = SQLContext(sc)
 sqlContext.sql("SET spark.sql.parquet.binaryAsString=true")
 
 #parquetFile = sqlContext.read.parquet("hdfs://node001:8020/user/hive/warehouse/highlander.db/exomes_hc")
-
-parquetFile = sqlContext.read.parquet("/Users/yalb/Projects/Github/digest/variantsulb")
+#pathVariants="/Users/yalb/Projects/Github/digest/variantsulb"
+parquetFile = sqlContext.read.parquet(pathVariants)
 parquetFile.registerTempTable("parquetFile");
 
 
-# In[140]:
+# In[61]:
 
 #analysisName="control_vs_neurodev_rare_digenic"
 #group1name="control_ulb_rare_damaging"
 #group2name="neurodev_ulb_rare_damaging"
-scope="monogenic"
+#scope="monogenic"
 #scale="gene"
 #controlMAF=0.5
 
 
-# In[100]:
+# In[62]:
 
 #RDDtest = sqlContext.sql("SELECT distinct patient from parquetFile")
 
 
-# In[101]:
+# In[63]:
 
 #RDDtest.count()
 
 
-# In[102]:
+# In[88]:
 
 #Input is vector patient, chr, pos, ref, alt, gene_symbol, zygosity
 def createKey_VariantGene(variantData):
     #ID is chr:pos:ref:alt
     ID=variantData[1]+":"+str(variantData[2])+":"+variantData[3]+":"+variantData[4]
+    
     #return ID, gene_symbol, patient, zygosity
     zygosity=2
     if variantData[6]=="Heterozygous":
@@ -98,7 +102,7 @@ def buildVariantVector(ID,variantData,patientsID):
 
 
 
-# In[103]:
+# In[89]:
 
 #variantGeneEntry: key is (variantID,gene), value is (patientIndex,zygosity)
 def geneAsKey(variantGeneEntry):    
@@ -115,7 +119,7 @@ def f(splitIndex ,v):
     return [(splitIndex,list(v))]
 
 
-# In[104]:
+# In[90]:
 
 def scoreVariantUnivariate(k,variantData):
     variantData=list(variantData)
@@ -134,7 +138,7 @@ def scoreVariantUnivariate(k,variantData):
         return (k,(score,sumCase,sumControl))
 
 
-# In[105]:
+# In[95]:
 
 def getGenotypeVectorByGene(gene_symbol,variantList,patientsID_dictionnary,patientsID_split_index):
     genoSum=[0]*len(patientsID_dictionnary)
@@ -147,12 +151,21 @@ def getGenotypeVectorByGene(gene_symbol,variantList,patientsID_dictionnary,patie
             sample_geno_list=list(sample_geno_list)
             
             #Go through list of sample_index,genotype
+            genoSumTemp=[0]*len(patientsID_dictionnary)
             for j in range(0,len(sample_geno_list)):
-                genoSum[sample_geno_list[j][0]]=genoSum[sample_geno_list[j][0]]+sample_geno_list[j][1]
+                genoSumTemp[sample_geno_list[j][0]]=int(sample_geno_list[j][1]>0)
+            
+            ratioCase=float(sum(genoSumTemp[0:patientsID_split_index]))/patientsID_split_index
+            ratioControl=float(sum(genoSumTemp[patientsID_split_index:len(patientsID_dictionnary)]))/(len(patientsID_dictionnary)-patientsID_split_index)
+            
+            if (ratioCase<float(caseMAF_b.value)) and (ratioControl<float(controlMAF_b.value)):
+                #genoSum[sample_geno_list[j][0]]=genoSum[sample_geno_list[j][0]]+sample_geno_list[j][1]
+                genoSum=[x+y for x,y in zip(genoSum,genoSumTemp)]
+    
     return genoSum
 
 
-# In[146]:
+# In[92]:
 
 #variantList is [(locusID,[sample_index,genotype])]
 def scoreGene(gene_symbol,variantList):
@@ -178,7 +191,7 @@ def scoreGene(gene_symbol,variantList):
         return (gene_symbol,(score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
 
 
-# In[129]:
+# In[93]:
 
 def scoreGenePair(gene_symbol_pair,variantList):
     
@@ -240,13 +253,18 @@ def fillMissing(k,v):
         
     return (k,v)
 
+def createKey_Variant(variantData):
+    #ID is chr:pos:ref:alt
+    ID=variantData[1]+":"+str(variantData[2])+":"+variantData[3]+":"+variantData[4]
+    return ((ID),variantData[0])
 
-# In[108]:
+
+# In[94]:
 
 float(15)/2
 
 
-# In[141]:
+# In[96]:
 
 start_time = time.time()
 
@@ -272,8 +290,17 @@ variants=variants_control.unionAll(variants_case)
 
 variants_grouped=variants.map(createKey_VariantGene).groupByKey()
 
+controlMAF_b=sc.broadcast(controlMAF)
+caseMAF_b=sc.broadcast(caseMAF)
 
-# In[150]:
+
+#Discard variant which have more than XX entries in Higlander DB
+#variants_stats=sqlContext.sql("SELECT patient,chr,pos,reference,alternative FROM parquetFile where filters='PASS'")
+#variantsIDtoDiscard=variants_stats.map(createKey_Variant).groupByKey().filter(lambda (k,v):len(v)>40).keys().collect()
+#variants_grouped=variants_grouped.filter(lambda (k,v):k[0] not in variantsIDtoDiscard)
+
+
+# In[97]:
 
 #start_time = time.time()
 ntests=0
@@ -297,22 +324,17 @@ runtime=end_time - start_time
 print(runtime)
 
 
-# In[151]:
+# In[99]:
 
 len(scores)
 
 
-# In[149]:
+# In[100]:
 
 scores[0:3]
 
 
-# In[50]:
-
-#analysisName="neurodev_vs_control_digenic_rare_high"
-
-
-# In[152]:
+# In[101]:
 
 scores=[analysisName,scale,scope,start_time,end_time,runtime,scores,patientsID_case,patientsID_control,group1name,group2name,ntests]
 
