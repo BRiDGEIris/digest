@@ -297,7 +297,10 @@ shinyServer(function(input, output,session) {
             group1sql<-"NULL"
           }
           
-          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name)
+          controlMAF<-input$controlGroupMAF
+          caseMAF<-input$caseGroupMAF
+          
+          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlMAF,caseMAF,pathVariants)
           setwd("spark")
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
           #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=hdfs://node001:8020/user/yleborgn/logs ../../spark/GVR.py &')
@@ -502,8 +505,8 @@ shinyServer(function(input, output,session) {
              strong("Total run time: ")
       ),
       column(4,
-             paste0(sessionvalues$results$group1name," (n=",length(sessionvalues$results$caseSampleID),")"),br(),
-             paste0(sessionvalues$results$group2name," (n=",length(sessionvalues$results$controlSampleID),")"),br(),
+             paste0(sessionvalues$results$group1name," (n=",length(sessionvalues$results$controlSampleID),")"),br(),
+             paste0(sessionvalues$results$group2name," (n=",length(sessionvalues$results$caseSampleID),")"),br(),
              sessionvalues$results$start_time,br(),
              sessionvalues$results$end_time,br(),
              paste(sessionvalues$results$run_time, "seconds")

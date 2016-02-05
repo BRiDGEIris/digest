@@ -10,6 +10,8 @@ require('queryBuildR')
 
 CliniPhenomeAPI<-"http://bridgeiris.ulb.ac.be:81/bridgeirisportal/search.php"
 
+pathVariants<-"/Users/yalb/Projects/Github/digest/variantsulb"
+
 USE_CLUSTER<-TRUE
 
 if (USE_CLUSTER) {
@@ -40,10 +42,6 @@ if (USE_CLUSTER) {
   library(SparkR)
   require('shiny') #Necessary for column function
   
-  if (!file.exists("/tmp/spark-events")) {
-    dir.create("/tmp/spark-events")
-  }
-  
   sparkEnvir <- list('spark.sql.parquet.binaryAsString'='true') #Needed to read strings from Parquet
   sc<-sparkR.init(master="local[4]",sparkEnvir=sparkEnvir)
   sqlContext <- sparkRSQL.init(sc) #sparkRHive.init(sc)#
@@ -55,6 +53,9 @@ if (USE_CLUSTER) {
   
 }
 
+if (!file.exists("/tmp/spark-events")) {
+  dir.create("/tmp/spark-events")
+}
 
 ######################
 #CliniPhenome
@@ -109,7 +110,10 @@ fieldsToKeep<-c("patient","chr","pos","reference","alternative","zygosity","read
                 "downsampled","mapping_quality_zero_reads","allele_num",
                 "change_type", "transcript_ensembl","num_genes","clinvar_rs", "dbsnp_id", 
                 "cadd_phred","cadd_raw","vest_score","pph2_hdiv_score", "pph2_hdiv_pred", 
-                "pph2_hvar_score", "pph2_hvar_pred", "sift_score", "sift_pred", "short_tandem_repeat","variant_confidence_by_depth")
+                "pph2_hvar_score", "pph2_hvar_pred", "sift_score", "sift_pred", "short_tandem_repeat",
+                "variant_confidence_by_depth"
+                #,"change_num_blood_filt"
+                )
 fields_select<-paste(unique(c(fieldsToKeep)),collapse=",")
 
 ######################
@@ -295,7 +299,7 @@ dummy<-function() {
   gene_list<-read.table("Guillaume_genes_new.txt",stringsAsFactor=F)[,1]
   gene_list_str<-paste0(gene_list,collapse=',')
   
-  gene_list<-read.table("gene_sarah.txt",stringsAsFactor=F)[,1]
+  gene_list<-read.table("annick.txt",stringsAsFactor=F)[,1]
   gene_list_str<-paste0(gene_list,collapse=',')
   
   #ARHGAP11B,ASPM,ATR,ATRIP,BLM,BRAT1,C7orf27,BUB1B,CASC5,CASK,CCDC7,CDC6,CDK5RAP2,CDT1,CENPF,CENPJ,CEP135,CEP152,CEP250,CEP63,CIT,COX7B,DYRK1A,EFTUD2,EIF2AK3,ERCC3,ERCC4,ERCC5,ERCC6,ERCC8,IER3IP1,KIF11,KMT2B,MLL4,MLL2,LIG4,MCPH1,MYCN,NBN,NDE1,NIN,NIPBL,ORC1,ORC1L,ORC4,ORC4L,ORC6,ORC6L,PCNT,PHC1,PLK4,PNKP,PPM1D,RAD50,RBBP8,RNU4ATAC,SASS6,SLC25A19,SLC9A6,SMC1A,SMC3,STAMBP,STIL,TRMT10A,RG9MTD2,TUBA1A,TUBB,TUBB2B,TUBB3,TUBG1,TUBGCP4,TUBGCP6,UBE3A,WDR62,ZEB2
