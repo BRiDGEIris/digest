@@ -20,14 +20,14 @@ createFilterVariant<-function(input,output,session,sessionvalues) {
   output$filterVariantQueryBuilderWidget<-renderQueryBuildR({
     load("filterVariantSpec.Rdata")
     rules<-NULL
-      query<-input$queryid
+      query<-input$sampleid
       if (length(query)>0) {
         query<-substr(query,2,nchar(query))
       }
     rules<-list(
       condition= 'AND',
       rules=list(list(
-      id= 'patient',
+      id= 'sample_id',
       operator= 'in',
       value=query
     ))

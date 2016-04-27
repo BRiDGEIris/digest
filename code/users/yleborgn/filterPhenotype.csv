@@ -1,0 +1,6 @@
+"Name"	"SQL"
+"All"	""
+"NeuroDev"	"Data_Source = 'ULB' AND Pathology = 'NEURODEV'"
+"Control"	"Data_Source = 'ULB' AND Pathology = 'Control'"
+"Microceph"	"Pathology = 'MICROCEPH'"
+"Control_ext"	"Data_Source = 'ULB' AND ( Pathology = 'Control' OR Pathology = 'TOL' OR Pathology = 'MEDINT' OR Pathology = 'NEURODEV' ) "

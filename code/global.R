@@ -10,15 +10,18 @@ require('queryBuildR')
 
 CliniPhenomeAPI<-"http://bridgeiris.ulb.ac.be:81/bridgeirisportal/search.php"
 
-pathVariants<-"/Users/yalb/Projects/Github/digest/variantsulb"
+#VARIANTS<-"/home/shiny/variantsulb"
+VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb"
+VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb1000gsubset"
 
-USE_CLUSTER<-TRUE
+#SPARK_HOME<-"/home/shiny/spark"
+SPARK_HOME<-"/Users/yalb/spark"
+Sys.setenv(SPARK_HOME=SPARK_HOME)
+Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
+
+USE_CLUSTER<-FALSE
 
 if (USE_CLUSTER) {
-  SPARK_HOME<-"/home/shiny/spark"
-  SPARK_HOME<-"/Users/yalb/spark"
-  Sys.setenv(SPARK_HOME=SPARK_HOME)
-  Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
   
   IMPALA_CLASSPATH<-"impala-jdbc-0.5-2"
   IMPALA_SERVER<-"jdbc:hive2://127.0.0.1:21050/;auth=noSasl"
@@ -26,18 +29,11 @@ if (USE_CLUSTER) {
   drv <- JDBC(driverClass = "org.apache.hive.jdbc.HiveDriver",
               classPath = list.files(IMPALA_CLASSPATH,pattern="jar$",full.names=T),
               identifier.quote="`")
-
-  VARIANTS_TABLE<-'highlander.exomes_hc'
-#  VARIANTS_TABLE<-'gdegols.exomes_1000g'
+  
+  VARIANTS_TABLE<-'digest.exomes_hc_ulb'
+  #VARIANTS_TABLE<-'digest.exomes_hc_1000g'
   
 } else {
-  #SPARK_HOME<-"/home/docker/spark"
-  #VARIANTS<-"/home/docker/variantsulb"
-  SPARK_HOME<-"/Users/yalb/spark"
-  VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb"
-  
-  Sys.setenv(SPARK_HOME=SPARK_HOME)
-  Sys.setenv(PATH=paste0(SPARK_HOME,"/bin:",SPARK_HOME,"/sbin:",Sys.getenv("PATH")))
   .libPaths(c(file.path(Sys.getenv("SPARK_HOME"), "R", "lib"), .libPaths()))
   library(SparkR)
   require('shiny') #Necessary for column function
@@ -103,7 +99,7 @@ loadPhenotypes<-function(sql) {
 
 
 #Only keep a subset of Highlander fields
-fieldsToKeep<-c("patient","chr","pos","reference","alternative","zygosity","read_depth","genotype_quality","filters",
+fieldsToKeep<-c("sample_id","chr","pos","ref","alt","zygosity","read_depth","genotype_quality","filters",
                 "gene_symbol", "gene_ensembl", 
                 "consensus_MAF","consensus_MAC", "snpeff_effect","snpeff_impact", 
                 "allelic_depth_proportion_ref","allelic_depth_proportion_alt",
@@ -299,8 +295,8 @@ dummy<-function() {
   gene_list<-read.table("Guillaume_genes_new.txt",stringsAsFactor=F)[,1]
   gene_list_str<-paste0(gene_list,collapse=',')
   
-  gene_list<-read.table("annick.txt",stringsAsFactor=F)[,1]
-  gene_list_str<-paste0(gene_list,collapse=',')
+  gene_list<-read.table("DIDA_genes.txt",stringsAsFactor=F)[,1]
+  gene_list_str<-paste0(gene_list,collapse="','")
   
   #ARHGAP11B,ASPM,ATR,ATRIP,BLM,BRAT1,C7orf27,BUB1B,CASC5,CASK,CCDC7,CDC6,CDK5RAP2,CDT1,CENPF,CENPJ,CEP135,CEP152,CEP250,CEP63,CIT,COX7B,DYRK1A,EFTUD2,EIF2AK3,ERCC3,ERCC4,ERCC5,ERCC6,ERCC8,IER3IP1,KIF11,KMT2B,MLL4,MLL2,LIG4,MCPH1,MYCN,NBN,NDE1,NIN,NIPBL,ORC1,ORC1L,ORC4,ORC4L,ORC6,ORC6L,PCNT,PHC1,PLK4,PNKP,PPM1D,RAD50,RBBP8,RNU4ATAC,SASS6,SLC25A19,SLC9A6,SMC1A,SMC3,STAMBP,STIL,TRMT10A,RG9MTD2,TUBA1A,TUBB,TUBB2B,TUBB3,TUBG1,TUBGCP4,TUBGCP6,UBE3A,WDR62,ZEB2
   

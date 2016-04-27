@@ -30,7 +30,7 @@ shinyServer(function(input, output,session) {
   output<-createFilterVariant(input,output,session,sessionvalues)
   
   observe({
-    query<-input$queryid
+    query<-input$sampleid
     if (length(query)>0) {
       query<-substr(query,2,nchar(query))
       if (query!="") {
@@ -300,7 +300,7 @@ shinyServer(function(input, output,session) {
           controlMAF<-input$controlGroupMAF
           caseMAF<-input$caseGroupMAF
           
-          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlMAF,caseMAF,pathVariants)
+          jobArguments<-rbind(analysisName,scope,scale,group1sql,group2sql,sampleGroup1name,sampleGroup2name,controlMAF,caseMAF,VARIANTS)
           setwd("spark")
           write.table(file="jobsArguments.conf",jobArguments,quote=F,col.names=F,row.names=F)
           #startCommand<-paste('spark-submit --name ",analysisName," --master local --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=hdfs://node001:8020/user/yleborgn/logs ../../spark/GVR.py &')
@@ -414,12 +414,13 @@ shinyServer(function(input, output,session) {
 #             
             if (sessionvalues$results$scale=="gene") {
               if (sessionvalues$results$scope=="monogenic") {
+                #browser()
                 geneID<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol']
                 data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
-                sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
+                sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group2name)]
                 if (length(sqlControl)>0) {
                   sqlControl<-paste0(sqlControl," and gene_symbol='",geneID,"'")
-                  variantsControl<-loadData(sqlControl)$data
+                  variantsControl<-loadData(sqlControl,noLimit=T)$data
                   nControl<-nrow(variantsControl)
                 }
                 else {
@@ -429,21 +430,21 @@ shinyServer(function(input, output,session) {
                 setProgress(message = 'Retrieving case data, please wait...',
                             value=3)
                 data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
-                sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group2name)]
+                sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
                 sqlCase<-paste0(sqlCase," and gene_symbol='",geneID,"'")
-                variantsCase<-loadData(sqlCase)$data
+                variantsCase<-loadData(sqlCase,noLimit=T)$data
                 variants<-rbind(variantsControl,variantsCase)
-                variants<-cbind("Group"=c(rep(sessionvalues$results$group1name,nControl),rep(sessionvalues$results$group2name,nrow(variantsCase))),variants)
+                variants<-cbind("Group"=c(rep(sessionvalues$results$group2name,nControl),rep(sessionvalues$results$group1name,nrow(variantsCase))),variants)
                 sessionvalues$variantDataGene<-variants
               }
               if (sessionvalues$results$scope=="digenic") {
                 geneID1<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol1']
                 geneID2<-sessionvalues$results$scoreSummaryRaw[input$resultsTable_rows_selected,'Gene_Symbol2']
                 data<-read.table(paste0("users/",sessionvalues$logged_user,"/filterVariant.csv"),header=T,stringsAsFactors=F,colClasses=c("character","character"))
-                sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
+                sqlControl<-data$SQL[which(data$Name==sessionvalues$results$group2name)]
                 if (length(sqlControl)>0) {
                   sqlControl<-paste0(sqlControl," and (gene_symbol='",geneID1,"' or gene_symbol='",geneID2,"')")
-                  variantsControl<-loadData(sqlControl)$data
+                  variantsControl<-loadData(sqlControl,noLimit=T)$data
                   nControl<-nrow(variantsControl)
                 }
                 else {
@@ -453,11 +454,11 @@ shinyServer(function(input, output,session) {
                 setProgress(message = 'Retrieving case data, please wait...',
                             value=3)
                 data<-read.table(sessionvalues$variantGroupFile,header=T,stringsAsFactors=F,colClasses=c("character","character"))
-                sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group2name)]
+                sqlCase<-data$SQL[which(data$Name==sessionvalues$results$group1name)]
                 sqlCase<-paste0(sqlCase," and (gene_symbol='",geneID1,"' or gene_symbol='",geneID2,"')")
-                variantsCase<-loadData(sqlCase)$data
+                variantsCase<-loadData(sqlCase,noLimit=T)$data
                 variants<-rbind(variantsControl,variantsCase)
-                variants<-cbind("Group"=c(rep(sessionvalues$results$group1name,nControl),rep(sessionvalues$results$group2name,nrow(variantsCase))),variants)
+                variants<-cbind("Group"=c(rep(sessionvalues$results$group2name,nControl),rep(sessionvalues$results$group1name,nrow(variantsCase))),variants)
                 sessionvalues$variantDataGene<-variants
               }
             }
@@ -551,6 +552,7 @@ shinyServer(function(input, output,session) {
   
   output$shareHighlanderUI<-renderUI({
     connectFile<-"../connectHighlander.R"
+    browser()
     source(connectFile)
     users<-sort(dbGetQuery(highlanderdb,paste0("select * from users"))$username[-1])
     dbDisconnect(highlanderdb)

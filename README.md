@@ -9,6 +9,8 @@ Documentation:
 * [Configuration](../master/doc/configuration.md)
 * [Files](../master/doc/files.md)
 * [API](../master/doc/API.md)
+* [Spark](../master/doc/spark.md)
+
 
 
 

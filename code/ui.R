@@ -85,16 +85,16 @@ shinyUI(
                                              column(4,offset=1,
                                                     h3("2) Scoring parameters"),
                                                     radioButtons("rankingScale", "Ranking scale",
-                                                                 c("Gene" = "gene"#,
-                                                                   #"Variant" = "variant"
+                                                                 c("Gene" = "gene",
+                                                                   "Variant" = "variant"
                                                                  )),
                                                     radioButtons("rankingScope", "Scope",
                                                                  c("Monogenic" = "monogenic",
                                                                    "Digenic" = "digenic"
                                                                  )),
                                                     checkboxGroupInput("rankingCriterion", "Scoring function",
-                                                                       c("Count" = "count"
-                                                                         #"Odds ratio" = "oddsratio"
+                                                                       c("Sum patients" = "sumpatients",
+                                                                         "Sum alleles" = "sumalleles"
                                                                          #"Student p-value" = "pvalue",
                                                                          #"Minimum Redundancy Maximum Relevance" = "mrmr"
                                                                        ),
