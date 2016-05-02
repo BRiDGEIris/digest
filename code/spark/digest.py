@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[15]:
+# In[38]:
 
 from pyspark import SparkContext, SparkConf
 from pyspark.sql import SQLContext
@@ -24,12 +24,20 @@ controlMAF=content[7]
 caseMAF=content[8]
 pathVariants=content[9]
 
-#nPartitions=8
+nPartitions=8
 conf = (SparkConf()
-#         .setMaster("local["+str(nPartitions)+"]")
+         .setMaster("local["+str(nPartitions)+"]")
          .setAppName(analysisName)
        )
 #sc.stop()
+from pyspark import BasicProfiler
+class MyCustomProfiler(BasicProfiler):
+     def show(self, id):
+         print("My custom profiles for RDD:%s" % id)
+
+conf = SparkConf().set("spark.python.profile", "true")
+#sc = SparkContext('local', 'test', conf=conf, profiler_cls=MyCustomProfiler)
+
 sc = SparkContext(conf=conf)
 
 
@@ -40,17 +48,43 @@ sc = SparkContext(conf=conf)
 
 
 
-# In[16]:
+# In[39]:
+
+#sqlContext = SQLContext(sc)
+#sqlContext.sql("SET spark.sql.parquet.binaryAsString=true")
+
+#pathVariants='/user/hive/warehouse/dbtest.db/data10000_100_10000p'
+
+#scale='gene'
+#scope='monogenic'
+#sqlCase="where sample_id<=50 and gene_symbol<=800"
+#sqlControl="where sample_id>50 and sample_id<=100 and gene_symbol<=800"
+#patientCase=range(1,51)
+#patientControl=range(51,101)
+#caseMAF=1.0
+#controlMAF=1.0
+#fields = [StructField("sample_id", IntegerType(), False),StructField("chr", StringType(), False),StructField("pos", IntegerType(), False),StructField("ref", StringType(), False),StructField("alt", Str$
+#schema = StructType(fields)
+#csvfile = sqlContext.read.format('com.databricks.spark.csv',).schema(schema).load(pathVariants).repartition(2000)
+#csvfile.registerTempTable("variantData");
+#parquetFile = sqlContext.read.parquet(pathVariants)
+#parquetFile.registerTempTable("variantData");
+
+
+# In[40]:
 
 #sqlContext = HiveContext(sc) #sqlContext._get_hive_ctx() #HiveContext(sc) 
+p=5
+
 sqlContext = SQLContext(sc)
 sqlContext.sql("SET spark.sql.parquet.binaryAsString=true")
 
+pathVariants='/Users/yalb/Projects/Github/digest/variantsulb1000gsubset'
 parquetFile = sqlContext.read.parquet(pathVariants)
 parquetFile.registerTempTable("variantData");
 
 
-# In[17]:
+# In[41]:
 
 #Input is vector patient, chr, pos, ref, alt, gene_symbol, zygosity
 def createKey_VariantGene(variantData):
@@ -59,8 +93,8 @@ def createKey_VariantGene(variantData):
     
     #return ID, gene_symbol, patient, zygosity
     zygosity=1
-    if variantData[6]=="Homozygous":
-    #if variantData[6]==2:
+    #if variantData[6]=="Homozygous":
+    if variantData[6]==2:
         zygosity=2
     patientsID_dictionnary=patientsID_dictionnary_b.value
     patientIndex=patientsID_dictionnary[variantData[0]]
@@ -79,13 +113,14 @@ def getVariantID(key_VariantGene):
     return key_VariantGene[0]
 
 
-# In[18]:
+# In[42]:
 
-def getGenotypeVector(genotypeList):
+#Transform sparse data (list of (sample_id,zygozity)) into vector z_i
+def vectorize(genotypeDataList):
     genotypeVector=[0]*len(patientsID_dictionnary_b.value)
-    if len(genotypeList)>0:
-        for j in range(0,len(genotypeList)):
-            genotypeVector[genotypeList[j][0]]=genotypeList[j][1]
+    if len(genotypeDataList)>0:
+        for j in range(0,len(genotypeDataList)):
+            genotypeVector[genotypeDataList[j][0]]=genotypeDataList[j][1]
         
         sumCase=float(sum([int(x>0) for x in genotypeVector[0:patientsID_split_index_b.value]]))
         sumControl=float(sum([int(x>0) for x in genotypeVector[patientsID_split_index_b.value:len(patientsID_dictionnary_b.value)]]))
@@ -97,33 +132,34 @@ def getGenotypeVector(genotypeList):
             genotypeVector=[0]*len(patientsID_dictionnary_b.value)
         
     return genotypeVector        
-    
 
 
-# In[67]:
+# In[43]:
 
-def getGenotypeVectorByGene(geneID,variantList):
-    genotypeVectorByGene=[0]*len(patientsID_dictionnary_b.value)
+#Compute burden for variantList
+def burden(variantList):
+    variantList=list(variantList)
+    burden=[0]*len(patientsID_dictionnary_b.value)
     
     if len(variantList)>0:
         #Go through list of variants
         for i in range(0,len(variantList)):
             #Get variant ID, and list of sample_index,genotype
-            (variantID,genotypeList)=variantList[i]
-            if genotypeList.__class__==tuple:
-                genotypeList=[genotypeList]
+            (variantID,genotypeDataList)=variantList[i]
+            if genotypeDataList.__class__==tuple:
+                genotypeDataList=[genotypeDataList]
             else:
-                genotypeList=list(genotypeList)
+                genotypeDataList=list(genotypeDataList)
             
             #Get genotype vector for current variantID
-            genotypeVector=getGenotypeVector(genotypeList)
+            genotypeDataVector=vectorize(genotypeDataList)
             #And sum with previous genotype vectors
-            genotypeVectorByGene=[x+y for x,y in zip(genotypeVectorByGene,genotypeVector)]
+            burden=[x+y for x,y in zip(burden,genotypeDataVector)]
     
-    return genotypeVectorByGene
+    return burden
 
 
-# In[20]:
+# In[44]:
 
 #variantList is [(locusID,[genotype])]
 def scoreVariant(key_VariantGene,value_GenotypeList):
@@ -151,7 +187,7 @@ def scoreVariant(key_VariantGene,value_GenotypeList):
     return (key_VariantGene,(score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
 
 
-# In[21]:
+# In[45]:
 
 def scoreVariantPair(variantIDpair,value_GenotypeListPair):
     
@@ -189,81 +225,83 @@ def scoreVariantPair(variantIDpair,value_GenotypeListPair):
 
 
 
-# In[22]:
+# In[134]:
 
 #variantList is [(locusID,[sample_index,genotype])]
-def scoreGene(geneID,variantList):
-    variantList=list(variantList)
+def scoreGene(block):
+    block=list(block)
+    lenb=len(block)
+    scores=[]
     
     patientsID_dictionnary=patientsID_dictionnary_b.value
-    genoSum=[0]*len(patientsID_dictionnary)
+    patientsID_split_index=patientsID_split_index_b.value
+    
+    if lenb>0:
+        for i in range(0,lenb):
+            listLoadBlock=block[i]
+    
+            sumCase=float(sum([int(x>0) for x in listLoadBlock[1][0:patientsID_split_index]]))
+            sumControl=float(sum([int(x>0) for x in listLoadBlock[1][patientsID_split_index:len(patientsID_dictionnary)]]))
+    
+            ratioCase=sumCase/patientsID_split_index
+            ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
+        
+            score=ratioCase-ratioControl
+            pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
+            #pvalue=ttest_ind(genotypeVectorByGene[0:patientsID_split_index],genotypeVectorByGene[patientsID_split_index:len(patientsID_dictionnary)])[1]/2
+        
+            if score>0:
+                scores.append((listLoadBlock[0],(score,pvalue,ratioCase,ratioControl,sumCase,sumControl)))
+    
+    return scores
+
+
+# In[47]:
+
+def scoreGenePair(block1,block2):
+    block1=list(block1)
+    lenb1=len(block1)
+    lenb2=len(block2)
+    scores=[]
+
+    patientsID_dictionnary=patientsID_dictionnary_b.value
     
     patientsID_split_index=patientsID_split_index_b.value
     
-    genotypeVectorByGene=getGenotypeVectorByGene(geneID,variantList)
-    
-    sumCase=float(sum([int(x>0) for x in genotypeVectorByGene[0:patientsID_split_index]]))
-    sumControl=float(sum([int(x>0) for x in genotypeVectorByGene[patientsID_split_index:len(patientsID_dictionnary)]]))
-    
-    ratioCase=sumCase/patientsID_split_index
-    ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
+    if lenb1>0 and lenb2>0:
+        for i in range(0,lenb1):
+            for j in range(0,lenb2):
+                listLoadBlock1=block1[i]
+                listLoadBlock2=block2[j]
+                if listLoadBlock1[0]>listLoadBlock2[0]:
+                    genoSum=[int(x>0 and y>0) for x,y in zip(listLoadBlock1[1],listLoadBlock2[1])]
+                    sumCase=float(sum([int(x>0) for x in genoSum[0:patientsID_split_index]]))
+                    sumControl=float(sum([int(x>0) for x in genoSum[(patientsID_split_index):len(patientsID_dictionnary)]]))
         
-    score=ratioCase-ratioControl
-    pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
-    #pvalue=ttest_ind(genotypeVectorByGene[0:patientsID_split_index],genotypeVectorByGene[patientsID_split_index:len(patientsID_dictionnary)])[1]/2
+                    ratioCase=sumCase/patientsID_split_index
+                    ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
         
-    #if score>0:
-    return (geneID,(score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
+                    score=ratioCase-ratioControl
+                    pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
+        
+                    if score>0:
+                        scores.append(((listLoadBlock1[0],listLoadBlock2[0]),((listLoadBlock1[0],listLoadBlock2[0]),score,pvalue,ratioCase,ratioControl,sumCase,sumControl)))
+    return scores
 
 
-# In[23]:
-
-def scoreGenePair(gene_symbol_pair,variantList):
-    
-    variantList=list(variantList)
-    
-    patientsID_dictionnary=patientsID_dictionnary_b.value
-    
-    patientsID_split_index=patientsID_split_index_b.value
-    
-    score=0
-    if len(variantList)==2:
-        (genes,variantList1)=variantList[0]
-        (genes,variantList2)=variantList[1]
-        
-        gene1=genes[0]
-        gene2=genes[1]
-        
-        variantList1=list(variantList1)
-        variantList2=list(variantList2)
-        
-        genoSum1=getGenotypeVectorByGene(gene1,variantList1)
-        genoSum2=getGenotypeVectorByGene(gene2,variantList2)
-        
-        genoSum=[int(x>0 and y>0) for x,y in zip(genoSum1,genoSum2)]
-        sumCase=float(sum([int(x>0) for x in genoSum[0:patientsID_split_index]]))
-        sumControl=float(sum([int(x>0) for x in genoSum[(patientsID_split_index+1):len(patientsID_dictionnary)]]))
-        
-        ratioCase=sumCase/patientsID_split_index
-        ratioControl=sumControl/(len(patientsID_dictionnary)-patientsID_split_index)
-        
-        score=ratioCase-ratioControl
-        pvalue=fisher_exact([[sumCase,patientsID_split_index-sumCase],[sumControl,len(patientsID_dictionnary)-patientsID_split_index]],'greater')[1]
-        
-        #if score>0:
-        return (gene_symbol_pair,((gene1,gene2),score,pvalue,ratioCase,ratioControl,sumCase,sumControl))
-
-
-
-# In[24]:
+# In[100]:
 
 start_time = time.time()
 
 variants_case = sqlContext.sql("SELECT sample_id,chr,pos,ref,alt,gene_symbol,zygosity FROM variantData "+sqlCase)
-patientsID_case=sorted(variants_case.map(lambda v:v[0]).distinct().collect())
+patientsID_case = sqlContext.sql("SELECT distinct sample_id FROM variantData "+sqlCase).collect()
+#patientsID_case=sorted(variants_case.map(lambda v:v[0]).distinct().collect())
+patientsID_case = [patients[0] for patients in patientsID_case]
 
 variants_control= sqlContext.sql("SELECT sample_id,chr,pos,ref,alt,gene_symbol,zygosity FROM variantData "+sqlControl)
-patientsID_control=sorted(variants_control.map(lambda v:v[0]).distinct().collect())
+patientsID_control = sqlContext.sql("SELECT distinct sample_id FROM variantData "+sqlControl).collect()
+#patientsID_control=sorted(variants_control.map(lambda v:v[0]).distinct().collect())
+patientsID_control = [patients[0] for patients in patientsID_control]
 
 patientsID=patientsID_case+patientsID_control
 patientsID_dictionnary=dict(zip(patientsID,range(len(patientsID))))
@@ -280,20 +318,33 @@ caseMAF_b=sc.broadcast(caseMAF)
 #variants_grouped.count()
 
 
-# In[68]:
+# In[24]:
+
+def f(splitIndex ,v): 
+    return [(splitIndex,list(v))]
+
+    
+
+
+# In[136]:
 
 #start_time = time.time()
 ntests=0
-
 if scope=='monogenic':
     if scale=='variant':
         ntests=variants_grouped.count()
         scores=variants_grouped.map(lambda (k,v):scoreVariant(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3,v4,v5,v6)): -v1)
 
+    #if scale=='gene':
+    #    variants_grouped_by_gene=variants_grouped.map(geneAsKey).groupByKey()
+    #    ntests=variants_grouped_by_gene.count()
+    #    scores=variants_grouped_by_gene.map(lambda (k,v):scoreGene(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3,v4,v5,v6)): -v1)
     if scale=='gene':
         variants_grouped_by_gene=variants_grouped.map(geneAsKey).groupByKey()
         ntests=variants_grouped_by_gene.count()
-        scores=variants_grouped_by_gene.map(lambda (k,v):scoreGene(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3,v4,v5,v6)): -v1)
+        burden_by_gene=variants_grouped_by_gene.map(lambda (k,v):(k,burden(v))).repartition(p)
+        burden_by_gene_with_partitions=burden_by_gene.mapPartitionsWithIndex(lambda splitIndex,v: f(splitIndex,v))
+        scores=burden_by_gene_with_partitions.flatMap(lambda (k,v):scoreGene(v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(v1,v2,v3,v4,v5,v6)): -v1)
 
 if scope=='digenic':
     if scale=='variant':
@@ -304,9 +355,16 @@ if scope=='digenic':
    
     if scale=='gene':
         variants_grouped_by_gene=variants_grouped.map(geneAsKey).groupByKey()
+        #variants_grouped_by_gene.cache()
+        burden_by_gene=variants_grouped_by_gene.map(lambda (k,v):(k,burden(v))).repartition(p)
+        burden_by_gene_with_partitions=burden_by_gene.mapPartitionsWithIndex(lambda splitIndex,v: f(splitIndex,v))
+        scores=[]
+        for i in range(0,p):
+            block_i=burden_by_gene_with_partitions.filter(lambda (k,v):k==i).collect()[0][1]
+            score=burden_by_gene_with_partitions.filter(lambda (k,v):k>=0).flatMap(lambda (k,v):scoreGenePair(v,block_i)).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3,v4,v5,v6)): -v1)
+            scores=scores+score
+        scores=sc.parallelize(scores,p).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3,v4,v5,v6)): -v1)
         genesID=variants_grouped_by_gene.keys().collect()
-        variants_grouped_by_gene_pairs=variants_grouped_by_gene.flatMap(lambda (k,v):createPairs(k,v,genesID)).groupByKey()
-        scores=variants_grouped_by_gene_pairs.map(lambda (k,v):scoreGenePair(k,v)).filter(lambda x:x is not None).takeOrdered(1000, key=lambda (k,(genes,v1,v2,v3,v4,v5,v6)): -v1)
         ntests=len(genesID)*(len(genesID)+1)/2
     
 end_time=time.time()
@@ -314,14 +372,9 @@ runtime=end_time - start_time
 print(runtime)
 
 
-# In[69]:
+# In[137]:
 
-len(scores)
-
-
-# In[70]:
-
-scores[0:3]
+scores[1:10]
 
 
 # In[14]:
@@ -333,7 +386,12 @@ with open(analysisName+'.txt', 'w') as outfile:
     
 
 
-# In[ ]:
+# In[35]:
 
 sc.stop()
+
+
+# In[ ]:
+
+
 

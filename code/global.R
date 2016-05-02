@@ -3,6 +3,8 @@ require('RMySQL')
 require("jsonlite")
 require('rpivotTable')
 require('plyr')
+
+
 require('shiny')
 require('RJDBC')
 require('RCurl')
@@ -12,7 +14,7 @@ CliniPhenomeAPI<-"http://bridgeiris.ulb.ac.be:81/bridgeirisportal/search.php"
 
 #VARIANTS<-"/home/shiny/variantsulb"
 VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb"
-VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb1000gsubset"
+VARIANTS<-"/Users/yalb/Projects/Github/digest/variantsulb"
 
 #SPARK_HOME<-"/home/shiny/spark"
 SPARK_HOME<-"/Users/yalb/spark"
